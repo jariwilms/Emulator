@@ -30,3 +30,6 @@
 *.exe
 *.out
 *.app
+/.vs/Emulator
+/x64/Debug
+/Emulator/x64/Debug
