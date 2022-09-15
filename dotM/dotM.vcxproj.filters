@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="dotM">
+      <UniqueIdentifier>{D9CC957C-C503-970D-6EF0-7C105A06130F}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dotM\Format">
+      <UniqueIdentifier>{F101B969-5DB7-315F-E6AB-2B3652602863}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dotM\Gameboy">
+      <UniqueIdentifier>{8C6ACCCC-78CD-5B71-2153-94270D9527F4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dotM\Gameboy\Component">
+      <UniqueIdentifier>{EEE17D0C-DADB-A65E-C348-3D6FAFE10CCB}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dotM\Gameboy\Component\CPU">
+      <UniqueIdentifier>{651674FB-5126-20CC-BADF-84EAA60E0F65}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dotM\Gameboy\Component\CPU\LR35902">
+      <UniqueIdentifier>{35B8A2D3-21F4-A53D-8A06-BE3476614E58}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dotM\Gameboy\Specification">
+      <UniqueIdentifier>{7C94FEBE-68A4-AA8F-D15D-0FAEBD8C9928}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dotM\GameboyAdvance">
+      <UniqueIdentifier>{3E3ECDE2-AA9F-AAF0-330D-F1A29F6DE1AF}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dotM\GameboyAdvance\Component">
+      <UniqueIdentifier>{207C58C6-8C94-3FF0-5541-CF89C118D489}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dotM\GameboyAdvance\Component\BUS">
+      <UniqueIdentifier>{F97594F8-65E4-E977-AECD-A4771A7BDF13}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dotM\GameboyAdvance\Component\CPU">
+      <UniqueIdentifier>{977994F8-03E8-E977-4CD1-A477B87EDF13}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dotM\GameboyAdvance\Component\CPU\Instruction">
+      <UniqueIdentifier>{C8801FB5-34F1-212E-FD0F-9CB6693F5A2F}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dotM\GameboyAdvance\Component\CPU\Registers">
+      <UniqueIdentifier>{DEECB276-4A52-46FD-D32A-E8D53F8F3B6C}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dotM\GameboyAdvance\Component\MEM">
+      <UniqueIdentifier>{AEA294F8-1A11-EA77-63FA-A477CFA7DF13}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dotM\GameboyAdvance\Specification">
+      <UniqueIdentifier>{AEF71EBC-1A66-743B-634F-2F3BCFFC69D7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="dotM\Library">
+      <UniqueIdentifier>{DDEE985F-C951-2804-72D7-60BA5E19F486}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\Test.hpp" />
+    <ClInclude Include="src\dotM\Format\Type.hpp">
+      <Filter>dotM\Format</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dotM\Gameboy\Component\CPU\CPU.hpp">
+      <Filter>dotM\Gameboy\Component\CPU</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dotM\Gameboy\Component\CPU\LR35902\LR35902.hpp">
+      <Filter>dotM\Gameboy\Component\CPU\LR35902</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dotM\Gameboy\Specification\GB.hpp">
+      <Filter>dotM\Gameboy\Specification</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\BUS\BUS.hpp">
+      <Filter>dotM\GameboyAdvance\Component\BUS</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\BUS\SLB.hpp">
+      <Filter>dotM\GameboyAdvance\Component\BUS</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\CPU\ARM7TDMI.hpp">
+      <Filter>dotM\GameboyAdvance\Component\CPU</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\MEM\MEMORY.hpp">
+      <Filter>dotM\GameboyAdvance\Component\MEM</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\MEM\RAM.hpp">
+      <Filter>dotM\GameboyAdvance\Component\MEM</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\MEM\ROM.hpp">
+      <Filter>dotM\GameboyAdvance\Component\MEM</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dotM\GameboyAdvance\GameboyAdvance.hpp">
+      <Filter>dotM\GameboyAdvance</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dotM\GameboyAdvance\Specification\GBA.hpp">
+      <Filter>dotM\GameboyAdvance\Specification</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dotM\Library\Bitwise.hpp">
+      <Filter>dotM\Library</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dotM\Library\File.hpp">
+      <Filter>dotM\Library</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dotM\Library\Macro.hpp">
+      <Filter>dotM\Library</Filter>
+    </ClInclude>
+    <ClInclude Include="src\stdafx.hpp" />
+    <ClInclude Include="src\dotM\Model\Component\CPU\CPU.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\Source.cpp" />
+    <ClCompile Include="src\dotM\GameboyAdvance\Component\CPU\ARM7TDMI.cpp">
+      <Filter>dotM\GameboyAdvance\Component\CPU</Filter>
+    </ClCompile>
+    <ClCompile Include="src\dotM\GameboyAdvance\GameboyAdvance.cpp">
+      <Filter>dotM\GameboyAdvance</Filter>
+    </ClCompile>
+    <ClCompile Include="src\dotM\Library\File.cpp">
+      <Filter>dotM\Library</Filter>
+    </ClCompile>
+    <ClCompile Include="src\stdafx.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Path.props" />
+  </ItemGroup>
+</Project>

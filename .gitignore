@@ -33,3 +33,8 @@
 /.vs/Emulator
 /x64/Debug
 /Emulator/x64/Debug
+/bin/Debug/windows/Emulator
+/bin_obj/Debug/windows/Emulator
+/.vs
+/bin/Debug/windows
+/bin_obj/Debug/windows
