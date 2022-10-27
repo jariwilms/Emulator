@@ -67,9 +67,6 @@
     <ClInclude Include="src\dotM\GameboyAdvance\Component\BUS\BUS.hpp">
       <Filter>dotM\GameboyAdvance\Component\BUS</Filter>
     </ClInclude>
-    <ClInclude Include="src\dotM\GameboyAdvance\Component\BUS\SLB.hpp">
-      <Filter>dotM\GameboyAdvance\Component\BUS</Filter>
-    </ClInclude>
     <ClInclude Include="src\dotM\GameboyAdvance\Component\CPU\ARM7TDMI.hpp">
       <Filter>dotM\GameboyAdvance\Component\CPU</Filter>
     </ClInclude>
@@ -94,11 +91,11 @@
     <ClInclude Include="src\dotM\Library\File.hpp">
       <Filter>dotM\Library</Filter>
     </ClInclude>
-    <ClInclude Include="src\dotM\Library\Macro.hpp">
-      <Filter>dotM\Library</Filter>
-    </ClInclude>
     <ClInclude Include="src\stdafx.hpp" />
     <ClInclude Include="src\dotM\Model\Component\CPU\CPU.hpp" />
+    <ClInclude Include="src\dotM\Instruction\ARM\ARM.hpp" />
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\MEM\WOM.hpp" />
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\SCREEN\AGS101.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\Source.cpp" />
@@ -114,6 +111,6 @@
     <ClCompile Include="src\stdafx.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Path.props" />
+    <None Include="src\dotM\GameboyAdvance\Data\BIOS.bin" />
   </ItemGroup>
 </Project>

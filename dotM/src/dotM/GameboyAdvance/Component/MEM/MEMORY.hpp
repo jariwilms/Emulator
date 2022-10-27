@@ -7,14 +7,18 @@ namespace dot::gba
 	class MEMORY
 	{
 	public:
-		enum class Type
+		enum class Access
 		{
 			Read,
 			Write,
 			Read_Write,
 		};
 
-		MEMORY(Type type, size_t addr0, size_t addrF) : m_type{ type }, m_memory{ std::make_unique<byte[]>((addrF - addr0) / 8) }, m_range{ std::make_tuple(addr0, addrF) } {}
+		MEMORY(Access type, size_t addr0, size_t addrf)
+			: m_access{ type }, m_range{ addr0, addrf }, m_memory{ std::make_unique<byte[]>((addrf - addr0) + 1) }
+		{
+			
+		}
 		virtual ~MEMORY() = default;
 
 
@@ -22,65 +26,68 @@ namespace dot::gba
 		template<typename T>
 		T read(size_t address) const
 		{
-			if (!isInRange(address)) return {};
+			if (m_access == Access::Write) return {};
 
-			auto index = getIndex(address);
+			address = map_physical(address);
 
 			T value{};
-			std::memcpy(&value, m_memory.get() + index, sizeof(T));
+			std::memcpy(&value, m_memory.get() + address, sizeof(T));
 
 			return value;
 		}
-
 		template<typename T>
-		void write(size_t address, T data)
+		void write(size_t address, T data) const
 		{
-			if (m_type == Type::Read) return;
-			if (!isInRange(address)) return;
+			if (m_access == Access::Read) return;
 
-			auto index = getIndex(address);
+			address = map_physical(address);
 
-			std::memcpy(m_memory.get() + index, &data, sizeof(T));
+			std::memcpy(m_memory.get() + address, &data, sizeof(T));
 		}
 
 		template<typename T>
-		void set(size_t address, size_t length, T* data)
+		void set(size_t address, const T* data, size_t size) const
 		{
-			if (length > size()) return; //throw error
+			if (size > this->size()) throw std::runtime_error("Size is too large");
 
-			std::memcpy(m_memory.get(), data, length);
+			address = map_physical(address);
+			std::memcpy(m_memory.get() + address, data, size);
 		}
 
-		template<typename T = byte>
-		size_t size() const
+		inline size_t size() const                                             //Returns the size of the memory in bytes
 		{
 			const auto& [addr0, addrF] = m_range;
-			return (addrF - addr0) / sizeof(T) + 1;
+			
+			return (addrF - addr0) + 1;
 		}
-
-		std::tuple<size_t, size_t> range() const
+		inline std::pair<size_t, size_t> range() const
 		{
 			return m_range;
 		}
+		inline Access access() const
+		{
+			return m_access;
+		}
 
-	protected:
-		std::unique_ptr<byte[]> m_memory{};
-		std::tuple<size_t, size_t> m_range{};
-
-	private:
-		inline bool isInRange(size_t address) const
+		inline bool in_bounds(size_t address) const
 		{
 			const auto& [addr0, addrF] = m_range;
+			
 			return address >= addr0 && address <= addrF;
 		}
-		inline size_t getIndex(size_t address) const
+		
+	protected:
+		inline size_t map_physical(size_t address) const
 		{
-			const auto& [addr0, addrF] = m_range;
-			return address - addr0;
+			if (!in_bounds(address)) throw std::invalid_argument("Address out of range!");
+			
+			return address - m_range.first;
 		}
+		
+	private:
+		std::unique_ptr<byte[]> m_memory{};
+		std::pair<size_t, size_t> m_range{};                                   //Holds the start and end range of addressable memory
 
-
-
-		Type m_type{};
+		Access m_access{};                                                     //Specifies which operations are allowed
 	};
 }

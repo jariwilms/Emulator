@@ -2,7 +2,8 @@
 
 #include <stdafx.hpp>
 
-#include "dotM/GameboyAdvance/Component/BUS/SLB.hpp"
+#include "dotM/Architecture/ARM/ARM.hpp"
+#include "dotM/GameboyAdvance/Component/BUS/BUS.hpp"
 #include "dotM/Library/Bitwise.hpp"
 #include "dotM/Model/Component/CPU/CPU.hpp"
 
@@ -11,170 +12,329 @@ namespace dot::gba
 	class ARM7TDMI : public CPU
 	{
 	public:
-		template<typename T>
-		struct Register
+		ARM7TDMI();
+		~ARM7TDMI() = default;
+
+		void cycle();
+		void reset();
+
+		std::shared_ptr<BUS<32>> bus; //TODO: private
+
+	//protected:
+		void fetch();
+		void decode();
+		void execute();
+
+		void exception();
+		void abort();
+
+	//private:
+		enum class OperatingState
+		{
+			ARM, 
+			THUMB, 
+		};
+		enum class OperatingMode
+		{
+			USR = 0b10000,                                                     //User
+			FIQ = 0b10001,                                                     //Fast Interrupt Request
+			IRQ = 0b10010,                                                     //Interrupt Request
+			SVC = 0b10011,                                                     //Supervisor
+			ABT = 0b10111,                                                     //Abort
+			UND = 0b11011,                                                     //Undefined
+			SYS = 0b11111,                                                     //System
+		};
+		enum class Operation
+		{
+			DataProcessing, 
+			Multiply, 
+			MultiplyLong, 
+			SingleDataSwap, 
+			BranchExchange, 
+			HalfwordDataTransferRegisterOffset, 
+			HalfwordDataTransferImmediateOffset, 
+			SingleDataTransfer, 
+			Undefined, 
+			BlockDataTransfer, 
+			Branch, 
+			CoprocessorDataTransfer, 
+			CoprocessorDataOperation, 
+			CoprocessorRegisterTransfer, 
+			SoftwareInterrupt, 
+		};
+
+		struct PSR : public Register<dword> //TODO: remove this and use methods in registers idk
 		{
 		public:
-			operator T() const
+			enum Flag
 			{
-				return m_value;
-			}
-			operator T&()
-			{
-				return m_value;
-			}
+				Negative = 31,                                                 //N
+				Zero     = 30,												   //Z
+				Carry    = 29,												   //C
+				Overflow = 28,												   //V
+																			   
+				IRQ      =  7,												   //I
+				FIQ      =  6,												   //F
+				Thumb    =  5,												   //T
+			};																   
+
+			PSR() = default;
+			virtual ~PSR() = default;
+
 			
-			bit operator[](unsigned int index)
+
+			bool flag(Flag flag) const
 			{
-				return (m_value >> index) & 0x1;
+				return get_bit(m_value, static_cast<unsigned int>(flag));
 			}
 
-			void operator=(const T& other)
+			OperatingMode mode()
 			{
-				m_value = other;
-			}
-			void operator+(const T& other)
-			{
-				m_value += other;
-			}
-			void operator-(const T& other)
-			{
-				m_value -= other;
+				return static_cast<OperatingMode>(m_value & 0x1F);
 			}
 
-		private:
-			T m_value;
-		};		
+
+
+			PSR& operator=(const PSR& other)                                   //TODO: fix PSR and base register operators => not clean/cohesive
+			{
+				m_value = other.m_value;
+
+				return *this;
+			}
+			PSR& operator=(const dword& value)
+			{
+				m_value = value;
+
+				return *this;
+			}
+		};
 		struct Registers
 		{
 		public:
-			Registers() = default;
+			Registers() : r12{ m_rx[12] }, r13 { m_rx[13] }, r14{ m_rx[14] }, r15{ m_rx[15] }
+			{
+				reset();
+			}
 			~Registers() = default;
 
+			void map(dot::gba::ARM7TDMI::OperatingMode mode)
+			{
+				switch (m_cpsr.mode())
+				{
+					case dot::gba::ARM7TDMI::OperatingMode::USR:
+					{
+						for (unsigned int i = 0; i < 7; ++i)
+						{
+							*(&r8 + i) = *(m_rx.data() + 8 + i);
+						}
+
+						break;
+					}
+					case dot::gba::ARM7TDMI::OperatingMode::FIQ:
+					{
+						for (unsigned int i = 0; i < 7; ++i)
+						{
+							*(&r8 + i) = *(&m_r8FIQ + i);
+						}
+
+						break;
+					}
+					case dot::gba::ARM7TDMI::OperatingMode::IRQ:
+					{
+						for (unsigned int i = 0; i < 2; ++i)
+						{
+							*(&r13 + i) = *(&m_r13IRQ + i);
+						}
+
+						break;
+					}
+					case dot::gba::ARM7TDMI::OperatingMode::SVC:
+					{
+						for (unsigned int i = 0; i < 2; ++i)
+						{
+							*(&r13 + i) = *(&m_r13SVC + i);
+						}
+
+						break;
+					}
+					case dot::gba::ARM7TDMI::OperatingMode::ABT:
+					{
+						for (unsigned int i = 0; i < 2; ++i)
+						{
+							*(&r13 + i) = *(&m_r13ABT + i);
+						}
+
+						break;
+					}
+					case dot::gba::ARM7TDMI::OperatingMode::UND:
+					{
+						for (unsigned int i = 0; i < 2; ++i)
+						{
+							*(&r13 + i) = *(&m_r13UND + i);
+						}
+
+						break;
+					}
+					case dot::gba::ARM7TDMI::OperatingMode::SYS:
+					{
+						map(dot::gba::ARM7TDMI::OperatingMode::USR);
+
+						break;
+					}
+
+					default: throw std::invalid_argument("Invalid operating mode");
+				}
+			}
+			void reset()
+			{
+				const unsigned int registerCount = 16;
+
+				for (unsigned int i = 0; i < registerCount; ++i)
+					*(&r0 + i) = m_rx[i];
+
+				m_r14SVC = pc;
+				m_spsrSVC = m_cpsr;                                           
+
+				m_cpsr &= 0xFFFFFFE0;                                          //Clear M[4:0]
+				m_cpsr |= 0x00000013;                                          //set   M[4:0] to b10011, SVC
+				m_cpsr |= 0x000000C0;                                          //Set   I and F bit
+				m_cpsr &= 0xFFFFFFDF;                                          //Clear T bit
+
+				pc = 0x0;			                                           
+			}
+
+
+			
+			PSR& get_cpsr()
+			{
+				return m_cpsr;
+			}
+			PSR& get_spsr()
+			{
+				switch (m_cpsr.mode())
+				{
+					case dot::gba::ARM7TDMI::OperatingMode::FIQ: return m_spsrFIQ;
+					case dot::gba::ARM7TDMI::OperatingMode::IRQ: return m_spsrIRQ;
+					case dot::gba::ARM7TDMI::OperatingMode::SVC: return m_spsrSVC;
+					case dot::gba::ARM7TDMI::OperatingMode::ABT: return m_spsrABT;
+					case dot::gba::ARM7TDMI::OperatingMode::UND: return m_spsrUND;
+
+					default: throw std::invalid_argument("Invalid operating mode");
+				}
+			}
+			
 
 
 			//User
-			Register<dword> r0;
-			Register<dword> r1;
-			Register<dword> r2;
-			Register<dword> r3;
-			Register<dword> r4;
-			Register<dword> r5;
-			Register<dword> r6;
-			Register<dword> r7;
+			RegisterReference<dword> r0{ m_rx[0] };
+			RegisterReference<dword> r1{ m_rx[1] };
+			RegisterReference<dword> r2{ m_rx[2] };
+			RegisterReference<dword> r3{ m_rx[3] };
+			RegisterReference<dword> r4{ m_rx[4] };
+			RegisterReference<dword> r5{ m_rx[5] };
+			RegisterReference<dword> r6{ m_rx[6] };
+			RegisterReference<dword> r7{ m_rx[7] };
 
-			Register<dword> r8;
-			Register<dword> r9;
-			Register<dword> r10;
-			Register<dword> r11;
-			Register<dword> r12;
+			RegisterReference<dword> r8{ m_rx[8] };
+			RegisterReference<dword> r9{ m_rx[9] };
+			RegisterReference<dword> r10{ m_rx[10] };
+			RegisterReference<dword> r11{ m_rx[11] };
 
-			union { Register<dword> r13; Register<dword> sp; };
-			union { Register<dword> r14; Register<dword> lr; };
-			union { Register<dword> r15; Register<dword> pc; };
-
-
-
-			//Fast Interrupt Request
-			Register<dword> r8_fiq;
-			Register<dword> r9_fiq;
-			Register<dword> r10_fiq;
-			Register<dword> r11_fiq;
-			Register<dword> r12_fiq;
-			Register<dword> r13_fiq;
-			Register<dword> r14_fiq;
-
-			//Interrupt Request
-			Register<dword> r13_irq;
-			Register<dword> r14_irq;
-			
-			//Supervisor
-			Register<dword> r13_svc;
-			Register<dword> r14_svc;
-
-			//Abort
-			Register<dword> r13_abt;
-			Register<dword> r14_abt;
-
-			//Undefined
-			Register<dword> r13_und;
-			Register<dword> r14_und;
-
-
-
-			//Status
-			Register<dword> cpsr;
-
-			Register<dword> spsr_fiq;
-			Register<dword> spsr_irq;
-			Register<dword> spsr_svc;
-			Register<dword> spsr_abt;
-			Register<dword> spsr_und;
+			union { RegisterReference<dword> r12; RegisterReference<dword> ip; };
+			union { RegisterReference<dword> r13; RegisterReference<dword> sp; };
+			union { RegisterReference<dword> r14; RegisterReference<dword> lr; };
+			union { RegisterReference<dword> r15; RegisterReference<dword> pc; };
 
 
 
 			Register<dword>& operator[](unsigned int index)
 			{
-				if (index > 15) throw std::out_of_range("Only general registers can be indexed");
+				if (index > 15) throw std::out_of_range("Only general registers can be indexed!");
 
-				return *(reinterpret_cast<Register<dword>*>(&this->r0) + index);
+				return *(&r0 + index);
 			}
+
+		private:
+			std::array<Register<dword>, 16> m_rx{};
+
+			//FIQ
+			Register<dword> m_r8FIQ{};
+			Register<dword> m_r9FIQ{};
+			Register<dword> m_r10FIQ{};
+			Register<dword> m_r11FIQ{};
+			Register<dword> m_r12FIQ{};
+			Register<dword> m_r13FIQ{};
+			Register<dword> m_r14FIQ{};
+
+			//IRQ
+			Register<dword> m_r13IRQ{};
+			Register<dword> m_r14IRQ{};
+
+			//SVC
+			Register<dword> m_r13SVC{};
+			Register<dword> m_r14SVC{};
+
+			//ABT
+			Register<dword> m_r13ABT{};
+			Register<dword> m_r14ABT{};
+
+			//UND
+			Register<dword> m_r13UND{};
+			Register<dword> m_r14UND{};
+
+
+
+			//Status
+			PSR m_cpsr{};
+
+			PSR m_spsrFIQ{};
+			PSR m_spsrIRQ{};
+			PSR m_spsrSVC{};
+			PSR m_spsrABT{};
+			PSR m_spsrUND{};
 		};
 		struct Instruction
 		{
 		public:
-	
+			enum class Flag
+			{
+				Accumulate,
+				ByteWord,
+				Immediate,
+				Link,
+				LoadStore,
+				PrePost,
+				PSRForce,
+				Set,
+				TransferLength,
+				Unsigned,
+				UpDown,
+				Writeback,
+			};
+
 			Instruction() = default;
+			Instruction(dword value) : m_value(value) {}
 			~Instruction() = default;
 
-			inline bool accumulate() const
+			bool flag(Flag flag) const
 			{
-				return a;
-			}
-			inline bool swap() const
-			{
-				return b;
-			}
-			inline bool unsigned_halfword() const
-			{
-				return h;
-			}
-			inline bool immediate() const
-			{
-				return i;
-			}
-			inline bool link() const
-			{
-				return l;
-			}
-			inline bool load_store() const
-			{
-				return l;
-			}
-			inline bool transfer_length() const
-			{
-				return n;
-			}
-			inline bool pre_post_index() const
-			{
-				return p;
-			}
-			inline bool status() const
-			{
-				return s;
-			}
-			inline bool up_down() const
-			{
-				return u;
-			}
-			//rename or create enum to get values (signed is a keyword)
-			inline bool sign() const
-			{
-				return u;
-			}
-			inline bool writeback() const
-			{
-				return w;
+				switch (flag)
+				{
+					case Flag::Accumulate:	   return a;
+					case Flag::ByteWord:	   return b;
+					case Flag::Immediate:      return i;
+					case Flag::Link:           return l;
+					case Flag::LoadStore:      return l;
+					case Flag::PrePost:		   return p;
+					case Flag::PSRForce:       return s;
+					case Flag::Set:			   return s;
+					case Flag::TransferLength: return n;
+					case Flag::Unsigned:	   return u;
+					case Flag::UpDown:		   return u;
+					case Flag::Writeback:	   return w;
+
+					default:                   throw std::runtime_error("Invalid instruction flag");
+				}
 			}
 
 			inline void clear()
@@ -236,6 +396,10 @@ namespace dot::gba
 
 
 
+			dword address{};
+			
+			
+
 			operator dword() const
 			{
 				return m_value;
@@ -244,216 +408,196 @@ namespace dot::gba
 			{
 				m_value = value;
 			}
+			bit operator[](unsigned int index)
+			{
+				return (m_value >> index) & 0x1;
+			}
 
 		private:
 			dword m_value{};
 		};
-		
-		ARM7TDMI();
-		~ARM7TDMI() = default;
-
-		void cycle();
-		void reset();
-
-		std::shared_ptr<BUS> bus;
-
-	protected:
-		void fetch();
-		void decode();
-		void execute();
-
-		void exception();
-		void abort();
-
-	private:
-		enum class OperatingState
-		{
-			ARM, 
-			THUMB, 
-		};
-		enum class OperatingMode
-		{
-			USR = 0b10000, //User
-			FIQ = 0b10001, //Fast Interrupt Request
-			IRQ = 0b10010, //Interrupt Request
-			SVC = 0b10011, //Supervisor
-			ABT = 0b10111, //Abort
-			UND = 0b11011, //Undefined
-			SYS = 0b11111, //System
-		};
-		enum class AddressingMode
-		{
-			MD1,
-			MD2,
-			MD3,
-			MD4,
-			MD5,
-		};
-		enum class InstructionFormat
-		{
-			DataProcessing, 
-			Multiply, 
-			MultiplyLong, 
-			SingleDataSwap, 
-			BranchExchange, 
-			HalfwordDataTransfer, 
-			SingleDataTransfer, 
-			Undefined, 
-			BlockDataTransfer, 
-			Branch, 
-			CoprocessorDataTransfer, 
-			CoprocessorDataOperation, 
-			CoprocessorRegisterTransfer, 
-			SoftwareInterrupt, 
-		};
-
-
-		dword shift(dword value, ShiftType shift, byte amount);
-		
-		template<typename T, size_t bits>
-		inline T extend(dword value)
-		{
-			struct ext { T v : bits; };
-
-			return ext{ value }.v;
-		}
-
-		template<typename T>
-		inline bool all_set(T value, unsigned int index, bit state) const
-		{
-			T mask = (1ul << index) - 1;
-			value &= mask;
-
-			return value == state;
-		}
 
 
 		
-		bool is_condition_passed() const;
-		void set_instruction_values();	
+		std::pair<dword, bit>shift_carry(dword value, ShiftType shift, dword amount, bit carryFlag = false);
 		
-		
-		
-	#pragma region Data Processing
-		void data_processing();
 
-		void i_and(Register<dword>& rd, dword op1, dword op2); //0000
-		void i_eor(Register<dword>& rd, dword op1, dword op2); //0001
-		void i_sub(Register<dword>& rd, dword op1, dword op2); //0010
-		void i_rsb(Register<dword>& rd, dword op1, dword op2); //0011
-		void i_add(Register<dword>& rd, dword op1, dword op2); //0100
-		void i_adc(Register<dword>& rd, dword op1, dword op2); //0101
-		void i_sbc(Register<dword>& rd, dword op1, dword op2); //0110
-		void i_rsc(Register<dword>& rd, dword op1, dword op2); //0111
-		void i_tst(Register<dword>& rd, dword op1, dword op2); //1000
-		void i_teq(Register<dword>& rd, dword op1, dword op2); //1001
-		void i_cmp(Register<dword>& rd, dword op1, dword op2); //1010
-		void i_cmn(Register<dword>& rd, dword op1, dword op2); //1011
-		void i_orr(Register<dword>& rd, dword op1, dword op2); //1100
-		void i_mov(Register<dword>& rd, dword op1, dword op2); //1101
-		void i_bic(Register<dword>& rd, dword op1, dword op2); //1110
-		void i_mvn(Register<dword>& rd, dword op1, dword op2); //1111
-	#pragma endregion
-	#pragma region PSR Transfer
-		void psr_transfer();
 		
-		void i_mrs(Register<dword>& rd, dword psr);
-		void i_msr(Register<dword>& psr, dword op2, bool flags);
-	#pragma endregion
-	#pragma region Multiply
-		void multiply();
-		
+//ARM Instructions
+#pragma region Data Processing
+		void data_processing(const Instruction& instruction);
+
+		void i_and(Register<dword>& rd, dword rn, dword op2);
+		void i_eor(Register<dword>& rd, dword rn, dword op2);
+		void i_sub(Register<dword>& rd, dword rn, dword op2);
+		void i_rsb(Register<dword>& rd, dword rn, dword op2);
+		void i_add(Register<dword>& rd, dword rn, dword op2);
+		void i_adc(Register<dword>& rd, dword rn, dword op2);
+		void i_sbc(Register<dword>& rd, dword rn, dword op2);
+		void i_rsc(Register<dword>& rd, dword rn, dword op2);
+		void i_tst(Register<dword>& rd, dword rn, dword op2);
+		void i_teq(Register<dword>& rd, dword rn, dword op2);
+		void i_cmp(Register<dword>& rd, dword rn, dword op2);
+		void i_cmn(Register<dword>& rd, dword rn, dword op2);
+		void i_orr(Register<dword>& rd, dword rn, dword op2);
+		void i_mov(Register<dword>& rd, dword rn, dword op2);
+		void i_bic(Register<dword>& rd, dword rn, dword op2);
+		void i_mvn(Register<dword>& rd, dword rn, dword op2);
+#pragma endregion
+#pragma region PSR Transfer
+		void psr_transfer(const Instruction& instruction);
+
+		void i_mrs(Register<dword>& rd, const PSR& psr);
+		void i_msr(PSR& psr, dword op2, dword mask);
+#pragma endregion
+#pragma region Multiply
+		void multiply(const Instruction& instruction);
+
 		void i_mul(Register<dword>& rd, dword rm, dword rs);
 		void i_mla(Register<dword>& rd, dword rn, dword rm, dword rs);
-	#pragma endregion
-	#pragma region Multiply Long
-		void multiply_long();
-		
+#pragma endregion
+#pragma region Multiply Long
+		void multiply_long(const Instruction& instruction);
+
 		void i_umull(Register<dword>& rdhi, Register<dword>& rdlo, dword rm, dword rs);
 		void i_smull(Register<dword>& rdhi, Register<dword>& rdlo, dword rm, dword rs);
 		void i_umlal(Register<dword>& rdhi, Register<dword>& rdlo, dword rm, dword rs);
 		void i_smlal(Register<dword>& rdhi, Register<dword>& rdlo, dword rm, dword rs);
-	#pragma endregion
-	#pragma region Single Data Swap
-		void single_data_swap();
-		
-		void i_swp(Register<dword>& rd, Register<dword>& rm, dword address, bool type);
-	#pragma endregion
-	#pragma region Branch and Exchange
-		void branch_exchange();
-		
-		void i_bx(dword op1);
-	#pragma endregion
-	#pragma region Halfword Data Transfer
-		void halfword_data_transfer();
-		
-		void i_ldrh(Register<dword>& rd);
-		void i_strh(Register<dword>& rd);
-		void i_ldrsb(Register<dword>& rd);
-		void i_ldrsh(Register<dword>& rd);
-	#pragma endregion
-	#pragma region Single Data Transfer
-		void single_data_transfer();
+#pragma endregion
+#pragma region Single Data Swap
+		void single_data_swap(const Instruction& instruction);
 
-		void i_ldr(Register<dword>& rd, bool b);
-		void i_str(Register<dword>& rd, bool b);
-	#pragma endregion
-	#pragma region Undefined
-		void undefined();
-		
+		void i_swp(Register<dword>& rd, Register<dword>& rm, size_t address, bool isByte);
+#pragma endregion
+#pragma region Branch and Exchange
+		void branch_exchange(const Instruction& instruction);
+
+		void i_bx(dword rn);
+#pragma endregion
+#pragma region Halfword Data Transfer
+		void halfword_data_transfer(const Instruction& instruction);
+
+		void i_ldrh(Register<dword>& rd, size_t address);
+		void i_strh(Register<dword>& rd, size_t address);
+		void i_ldrsb(Register<dword>& rd, size_t address);
+		void i_ldrsh(Register<dword>& rd, size_t address);
+#pragma endregion
+#pragma region Single Data Transfer
+		void single_data_transfer(const Instruction& instruction);
+
+		void i_ldr(Register<dword>& rd, size_t address, bool isByte);
+		void i_str(Register<dword>& rd, size_t address, bool isByte);
+#pragma endregion
+#pragma region Undefined
+		void undefined(const Instruction& instruction);
+
 		void i_und();
-	#pragma endregion
-	#pragma region Block Data Transfer
-		void block_data_transfer();
-		
-		void i_ldm(std::vector<std::reference_wrapper<Register<dword>>> registers, dword address);
-		void i_stm(std::vector<std::reference_wrapper<Register<dword>>> registers, dword address);
-	#pragma endregion
-	#pragma region Branch
-		void branch();
+#pragma endregion
+#pragma region Block Data Transfer
+		void block_data_transfer(const Instruction& instruction);
+
+		void i_ldm(std::vector<std::reference_wrapper<Register<dword>>> registers, size_t address);
+		void i_stm(std::vector<std::reference_wrapper<Register<dword>>> registers, size_t address);
+#pragma endregion
+#pragma region Branch
+		void branch(const Instruction& instruction);
 
 		void i_b(dword offset);
 		void i_bl(dword offset);
-	#pragma endregion
-	#pragma region Coprocessor Data Transfer
-		void coprocessor_data_transfer();
-		
+#pragma endregion
+#pragma region Coprocessor Data Transfer
+		void coprocessor_data_transfer(const Instruction& instruction);
+
 		void i_ldc();
 		void i_stc();
-	#pragma endregion
-	#pragma region Coprocessor Data Operation
-		void coprocessor_data_operation();
-		
+#pragma endregion
+#pragma region Coprocessor Data Operation
+		void coprocessor_data_operation(const Instruction& instruction);
+
 		void i_cdp();
-	#pragma endregion
-	#pragma region Coprocessor Register Transfer
-		void coprocessor_register_transfer();
-		
+#pragma endregion
+#pragma region Coprocessor Register Transfer
+		void coprocessor_register_transfer(const Instruction& instruction);
+
 		void i_mcr();
 		void i_mrc();
-	#pragma endregion
-	#pragma region Software Interrupt
-		void software_interrupt();
-		
+#pragma endregion
+#pragma region Software Interrupt
+		void software_interrupt(const Instruction& instruction);
+
 		void i_swi();
-	#pragma endregion
+#pragma endregion
+
+//THUMB Instructions, these will get better names...
+#pragma region Move Shifted Register
+		void move_shifted_register();
+
+		void i_lsl();
+		void i_lsr();
+		void i_asr();
+#pragma endregion
+#pragma region Add/Subtract
+		void add_subtract();
+#pragma endregion
+#pragma region Move/Compare/Add/Subtract Immediate
+		void move_compare_add_subtract_immediate();
+#pragma endregion
+#pragma region ALU Operations
+		void alu_operations();
+#pragma endregion
+#pragma region High Register Operations / Branch Exchange
+		void hi_register_operations__branch_exchange();
+#pragma endregion
+#pragma region PC-relative Load
+		void pc_relative_load();
+#pragma endregion
+#pragma region Load/Store Register Offset
+		void load_store_register_offset();
+#pragma endregion
+#pragma region Load/Store Sign Extended
+		void load_store_sign_extended();
+#pragma endregion
+#pragma region Load/Store Immediate Offset
+		void load_store_immediate_offet();
+#pragma endregion
+#pragma region Load/Store Halfword
+		void load_store_halfword();
+#pragma endregion
+#pragma region SP-relative Load/Store
+		void sp_relative_load_store();
+#pragma endregion
+#pragma region Load Address
+		void load_address();
+#pragma endregion
+#pragma region Add Offset Stack Pointer
+		void add_offset_stack_pointer();
+#pragma endregion
+#pragma region Push/Pop Registers
+		void push_pop_registers();
+#pragma endregion
+#pragma region Multiple Load/Store
+		void multiple_load_store();
+#pragma endregion
+#pragma region Conditional Branch
+		void conditional_branch();
+#pragma endregion
+#pragma region Software Interrupt
+		void software_interrupt();
+#pragma endregion
+#pragma region Unconditional Branch
+		void unconditional_branch();
+#pragma endregion
+#pragma region Long Branch Link
+		void long_branch_link();
+#pragma endregion
+		
 
 
 
-		OperatingState m_operatingState;
-		OperatingMode m_operatingMode;
-		
-		Registers m_registers;
-		
-		Instruction m_instruction;
-		InstructionFormat m_decodedInstruction;
-		
-		
+		Pipeline<Instruction, 3> m_pipeline{};                                 //Construct a pipeline with 3 stages
+		Registers m_registers{};                                               //The registry has 37 registers
+		Operation m_operation{};                                               //The operation to be done on the current instruction value
 
-		bit m_carry{};
-
-		
-		
-		unsigned int m_cycles{};
+		unsigned int m_cycles{};                                               //The number of cycles the CPU will idle for
 	};
 }

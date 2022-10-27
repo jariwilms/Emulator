@@ -11,7 +11,7 @@ std::vector<byte> read_file(const std::filesystem::path& path)
 	if (!file) throw std::runtime_error("File could not be opened");
 	ss << file.rdbuf();
 	s = ss.str();
-
+	
 	std::vector<byte> res{};
 	res.reserve(s.length());
 	std::copy(s.begin(), s.end(), std::back_inserter(res));

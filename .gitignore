@@ -38,3 +38,5 @@
 /.vs
 /bin/Debug/windows
 /bin_obj/Debug/windows
+/bin/Release/windows/dotM
+/bin_obj/Release/windows/dotM

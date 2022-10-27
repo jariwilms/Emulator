@@ -10,7 +10,6 @@ namespace dot::gba
 	class RAM : public MEMORY
 	{
 	public:
-		RAM() : MEMORY{ Type::Read_Write, ADDR0, ADDRF } {}
-		~RAM() override = default;
+		RAM() : MEMORY{ Access::Read_Write, ADDR0, ADDRF } {}
 	};
 }

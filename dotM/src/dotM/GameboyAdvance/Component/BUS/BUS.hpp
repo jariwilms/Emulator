@@ -6,63 +6,66 @@
 
 namespace dot::gba
 {
+	template<size_t WIDTH>
 	class BUS
 	{
 	public:
-		BUS(const size_t bits)
-			: m_bits{ bits }
-		{
-
-		}
+		BUS() = default;
 		virtual ~BUS() = default;
 
 		template<typename T>
-		T read()
+		T read(size_t address)
 		{
-			check<T>();
+			if (!validate<T>(address)) return {};
 
-			return m_target->read<T>(m_address);
+			return m_selectedMemory->read<T>(address);
 		}
-
 		template<typename T>
-		void write(T data)
+		void write(size_t address, T data)
 		{
-			check<T>();
+			if (!validate<T>(address)) return;
 
-			m_target->write<T>(data);
+			m_selectedMemory->write<T>(address, data);
 		}
 
-		inline void set(dword address)
-		{
-			m_address = address;
-			broadcast();
-		}
-
-		inline void attach(std::shared_ptr<MEMORY> memory)
+		inline void connect(std::shared_ptr<MEMORY> memory)
 		{
 			m_memory.emplace_back(memory);
 		}
 
-	private:
+	protected:
 		template<typename T>
-		inline void check()
+		inline bool validate(size_t address)                                   //Check if the given type and address are valid
 		{
-			assert(sizeof(T) <= m_bits);
+			auto size = sizeof(T) * 8;
+			auto memory = map_memory(address);
+
+			if (memory.has_value() && (size <= m_width))
+			{
+				m_selectedMemory = memory.value();
+				
+				return true;
+			}
+
+			return false;
 		}
 
-		void broadcast()
+		std::optional<std::shared_ptr<MEMORY>> map_memory(size_t address) const
 		{
 			for (const auto& memory : m_memory)
 			{
 				const auto& [addr0, addrF] = memory->range();
-				if (m_address >= addr0 && m_address <= addrF) m_target = memory;
+				
+				if (memory->in_bounds(address)) return memory;
 			}
+
+			return {};
 		}
 
 		std::vector<std::shared_ptr<MEMORY>> m_memory{};
-		std::shared_ptr<MEMORY> m_target{};
-		dword m_address{};
+		std::shared_ptr<MEMORY> m_selectedMemory{};
+		size_t m_address{};
 
-		const size_t m_bits{};
+		const size_t m_width{ WIDTH };
 	};
 }

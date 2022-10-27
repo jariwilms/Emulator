@@ -92,6 +92,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\MEM\WOM.hpp" />
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\SCREEN\AGS101.hpp" />
+    <ClInclude Include="src\dotM\Instruction\ARM\ARM.hpp" />
     <ClInclude Include="src\dotM\Model\Component\CPU\CPU.hpp" />
     <ClInclude Include="src\Test.hpp" />
     <ClInclude Include="src\dotM\Format\Type.hpp" />
@@ -99,7 +102,6 @@
     <ClInclude Include="src\dotM\Gameboy\Component\CPU\LR35902\LR35902.hpp" />
     <ClInclude Include="src\dotM\Gameboy\Specification\GB.hpp" />
     <ClInclude Include="src\dotM\GameboyAdvance\Component\BUS\BUS.hpp" />
-    <ClInclude Include="src\dotM\GameboyAdvance\Component\BUS\SLB.hpp" />
     <ClInclude Include="src\dotM\GameboyAdvance\Component\CPU\ARM7TDMI.hpp" />
     <ClInclude Include="src\dotM\GameboyAdvance\Component\MEM\MEMORY.hpp" />
     <ClInclude Include="src\dotM\GameboyAdvance\Component\MEM\RAM.hpp" />
@@ -108,7 +110,6 @@
     <ClInclude Include="src\dotM\GameboyAdvance\Specification\GBA.hpp" />
     <ClInclude Include="src\dotM\Library\Bitwise.hpp" />
     <ClInclude Include="src\dotM\Library\File.hpp" />
-    <ClInclude Include="src\dotM\Library\Macro.hpp" />
     <ClInclude Include="src\stdafx.hpp" />
   </ItemGroup>
   <ItemGroup>
@@ -121,7 +122,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Path.props" />
+    <None Include="src\dotM\GameboyAdvance\Data\BIOS.bin" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

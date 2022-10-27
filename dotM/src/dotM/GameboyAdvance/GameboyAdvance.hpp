@@ -32,7 +32,7 @@ namespace dot::gba
 
 		inline void on()
 		{
-			m_running = true;
+			boot();
 			run();
 		}
 		inline void off()
@@ -40,30 +40,27 @@ namespace dot::gba
 			m_running = false;
 		}
 
-	private:
-		void setup();
+	//private:
 		void boot();
 		void run();
 
 
 
-		std::shared_ptr<ARM7TDMI> m_cpu{};
+		std::shared_ptr<ARM7TDMI> m_CPU{};
+		std::shared_ptr<BUS<32>>  m_BUS{};
+		
+		std::shared_ptr<BIOS>     m_BIOS{};
+		std::shared_ptr<EWRAM>    m_EWRAM{};
+		std::shared_ptr<IWRAM>    m_IWRAM{};
+		std::shared_ptr<IOREG>    m_IOREG{};
+		
+		std::shared_ptr<OPAL>     m_OPAL{};
+		std::shared_ptr<VRAM>     m_VRAM{};
+		std::shared_ptr<OAM>      m_OAM{};
+		
 
-		std::shared_ptr<BIOS> m_bios{};
 
-		std::shared_ptr<IWRAM> m_iwRam{};
-		std::shared_ptr<EWRAM> m_ewRam{};
-		std::shared_ptr<VRAM> m_vRAM{};
-
-		std::shared_ptr<OAM> m_oam{};
-		std::shared_ptr<PAL> m_pal{};
-
-		std::shared_ptr<SLB<BUS_WIDTH>> m_bus{};
-
-
-
-		unsigned int m_cycles{};
-
+		
 		bool m_running{};
 	};
 }

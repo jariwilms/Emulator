@@ -6,40 +6,41 @@ namespace dot::gba
 {
 	GameboyAdvance::GameboyAdvance()
 	{
-		m_cpu = std::make_shared<ARM7TDMI>();
-		m_bios = std::make_shared<BIOS>();
-		m_iwRam = std::make_shared<IWRAM>();
-		m_ewRam = std::make_shared<EWRAM>();
-		m_vRAM = std::make_shared<VRAM>();
-		m_oam = std::make_shared<OAM>();
-		m_pal = std::make_shared<PAL>();
-		m_bus = std::make_shared<SLB<BUS_WIDTH>>();
+		m_CPU   = std::make_shared<ARM7TDMI>();
+		m_BIOS  = std::make_shared<BIOS>();
+		m_IWRAM = std::make_shared<IWRAM>();
+		m_EWRAM = std::make_shared<EWRAM>();
+		m_VRAM  = std::make_shared<VRAM>();
+		m_OAM   = std::make_shared<OAM>();
+		m_OPAL  = std::make_shared<OPAL>();
+		m_BUS   = std::make_shared<BUS<BUS_WIDTH>>();
 
-		setup();
-		boot();
-	}
 
-	void GameboyAdvance::setup()
-	{
-		m_cpu->bus = m_bus;
+		
+		m_CPU->bus = m_BUS;
 
-		m_bus->attach(m_bios);
-		m_bus->attach(m_iwRam);
-		m_bus->attach(m_ewRam);
-		m_bus->attach(m_vRAM);
-		m_bus->attach(m_oam);
-		m_bus->attach(m_pal);
+		m_BUS->connect(m_BIOS);
+		m_BUS->connect(m_IWRAM);
+		m_BUS->connect(m_EWRAM);
+		m_BUS->connect(m_VRAM);
+		m_BUS->connect(m_OAM);
+		m_BUS->connect(m_OPAL);
 	}
 	void GameboyAdvance::boot()
 	{
 		auto bios = read_file(BIOS_LOC);
-		m_bios->set(0x0, bios.size(), bios.data());
+		m_BIOS->set(0x0, bios.data(), bios.size());
+
+		m_running = true;
 	}
 	void GameboyAdvance::run()
 	{
+		static size_t cycles{};
+		
 		while (m_running)
 		{
-			m_cpu->cycle();
+			m_CPU->cycle();
+			//++cycles;
 		}
 	}
 }
