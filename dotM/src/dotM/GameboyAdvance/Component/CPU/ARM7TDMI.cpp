@@ -2,59 +2,60 @@
 
 #include "ARM7TDMI.hpp"
 
-#define _DEBUG_OUTPUT true
-
 namespace dot::gba
 {
-    ARM7TDMI::ARM7TDMI()
-    {
-        reset();
-    }
-
     void ARM7TDMI::cycle()
     {
-        if (m_cycles)                                                          //If we still have cycles to wait, return
+        if (m_cycles)
         {
             --m_cycles;
             return;
         }
 
-        m_pipeline.shift();                                                    //Shift the pipeline forward at the start of every cycle
-                                                                               //Execute and decode functions only run if an instruction
-                                                                               //is present on positions [2] and [1] of the pipeline
+
+
+		const auto& cpsr = m_registers.get_cpsr();
+        bool tFlag = cpsr.flag(PSR::Flag::Thumb);
+
+        tFlag ? m_pipelineTHUMB.shift() : m_pipelineARM.shift();
         
-        if (m_pipeline.load() >= 3) execute();                                 //Execute pipeline instruction 3
-        if (m_pipeline.load() >= 2) decode();								   //Decode  pipeline instruction 2
-                                    fetch();								   //Fetch   pipeline instruction 1
+        execute();
+        decode();
+        fetch();
     }
     void ARM7TDMI::reset()
     {
-        m_pipeline.flush();                                                    //Remove all instructions present in the pipeline
-        m_registers.reset();                                                   //All registers are set to 0, some values are adjusted based on reset specification
+        m_pipelineARM.flush();                                                 //Remove all instructions present in the pipeline
+        m_pipelineTHUMB.flush();
 
-        //m_cycles += 2;                                                         //Wait 2 cycles before fetching the first instruction
+        m_registers.reset();                                                   //All registers are set to 0, some values are adjusted based on reset specification
     }
+
+	void ARM7TDMI::connect(std::shared_ptr<BUS<32>> bus)
+	{
+        m_BUS = bus;
+	}
 
     void ARM7TDMI::fetch()
     {
         const auto& cpsr = m_registers.get_cpsr();
-        const auto tFlag = cpsr.flag(PSR::Flag::Thumb);
-        
         dword address{};
 
+		
 
+        const auto tFlag = cpsr.flag(PSR::Flag::Thumb);
 		
         if (tFlag)
         {
             Instruction<word> instruction{};
             static dword value{};
 
-            address = m_registers.pc & (~0u - 1);                              //0xFFFFFFFE, 2 byte alignment
-            auto fetch = !get_bit(m_registers.pc.get(), 1);                    //Only fetch if the "2" bit is not set
+            address = m_registers.pc & ~0x1;                                   //0xFFFFFFFE, 2 byte alignment
+            const auto fetch = !get_bit(m_registers.pc.get(), 1);              //Only fetch if the "2" bit is not set
 
             if (fetch)                                                         
             {
-                value = bus->read<dword>(address);
+                value = m_BUS->read<dword>(address);
                 instruction = static_cast<word>(value);
             }
             else
@@ -62,136 +63,217 @@ namespace dot::gba
                 instruction = static_cast<word>(value >> 16);
             }
 
-            m_pipeline2.push(instruction);
-            m_instructionAddresses.front() = address;
+            instruction.address = address;
 
+            m_pipelineTHUMB.push(instruction);
             m_registers.pc += 2;
         }
         else
         {
             Instruction<dword> instruction{};
 
-            address = m_registers.pc & (~0u - 3);                              //0xFFFFFFFC, 4 byte alignment
-            instruction = bus->read<dword>(address);
+            address = m_registers.pc & ~0x3;                                   //0xFFFFFFFC, 4 byte alignment
+            instruction = m_BUS->read<dword>(address);
+            instruction.address = address;
 
-            m_pipeline.push(instruction);
-            m_instructionAddresses.front() = address;
-            
+            m_pipelineARM.push(instruction);
             m_registers.pc += 4;
         }
     }
     void ARM7TDMI::decode()
     {
-        const auto& instruction = m_pipeline[1];                                     
+		const auto& cpsr = m_registers.get_cpsr();
+        const auto tFlag = cpsr.flag(PSR::Flag::Thumb);
 
 
-		
-        for (int i = architecture::ARM_FORMAT_COUNT - 1; i >= 0; --i)          //Match functions in reverse order: specific to general format
-        {																	   
-            auto mask = instruction & architecture::ARM_INSTRUCTION_MASK[i];   
-            bool match = (mask == architecture::ARM_INSTRUCTION_FORMAT[i]);    
 
-            if (match)                                                         //If a match is found, we know which operation to perform
-            {
-                m_operation = static_cast<Operation>(i);
-                
-                return;
-            }
+        if (tFlag)
+        {
+            if (m_pipelineTHUMB.load() < 2) return;
+
+            const auto& instruction = m_pipelineTHUMB[1];
+
+			for (int i = architecture::THUMB_FORMAT_COUNT - 1; i >= 0; --i)
+			{
+				const auto mask = instruction & architecture::THUMB_INSTRUCTION_MASK[i];
+				const bool match = (mask == architecture::THUMB_INSTRUCTION_FORMAT[i]);
+
+				if (match)
+				{
+					m_operationTHUMB = static_cast<OperationTHUMB>(i);
+
+					return;
+				}
+			}
+        }
+        else
+        {
+            if (m_pipelineARM.load() < 2) return;
+
+			const auto& instruction = m_pipelineARM[1];
+
+			for (int i = architecture::ARM_FORMAT_COUNT - 1; i >= 0; --i)
+			{
+				const auto mask = instruction & architecture::ARM_INSTRUCTION_MASK[i];
+				const bool match = (mask == architecture::ARM_INSTRUCTION_FORMAT[i]);
+
+				if (match)
+				{
+					m_operationARM = static_cast<OperationARM>(i);
+
+					return;
+				}
+			}
         }
 
-        throw std::runtime_error("Invalid instruction format");                //If no match is found, the instruction is invalid TODO => undefined?
+        throw std::runtime_error("Invalid instruction format");                //TODO => undefined?
     }
     void ARM7TDMI::execute()
     {
-        const auto& instruction = m_pipeline[2];                               
         const auto& cpsr = m_registers.get_cpsr();
+        const auto tFlag = cpsr.flag(PSR::Flag::Thumb);
         
-        const auto condition_passed = [](const Instruction<dword>& instruction, const PSR& psr) -> bool
-        {
-            const auto condition = get_bits(instruction, 28, 4);
 
-            const auto N = psr.flag(PSR::Flag::Negative);
-            const auto Z = psr.flag(PSR::Flag::Zero);
-            const auto C = psr.flag(PSR::Flag::Carry);
-            const auto V = psr.flag(PSR::Flag::Overflow);
-            
-            switch (condition)
-            {
-                case 0xE: return true;			                               //AL
-                case 0xF: return false;			                               //RESERVED
-                                                                               
-                case 0x0: return  Z;			                               //EQ
-                case 0x1: return !Z;			                               //NE
-                case 0x2: return  C;			                               //CS
-                case 0x3: return !C;			                               //CC
-                case 0x4: return  N;			                               //MI
-                case 0x5: return !N;			                               //PL
-                case 0x6: return  V;			                               //VS
-                case 0x7: return !V;			                               //VC
-                case 0x8: return  C && !Z;		                               //HI
-                case 0x9: return !C || Z;		                               //LS
-                case 0xA: return  N == V;		                               //GE
-                case 0xB: return  N != V;		                               //LT
-                case 0xC: return !Z && (N == V);                               //GT
-                case 0xD: return  Z || (N != V);                               //LE
 
-                default:  return false;
-            }
-        }(instruction, cpsr); //cursed?
-        if (!condition_passed) return;                                         //Every instruction has a 4-bit condition code, which determines if that instruction is executed
+        if (tFlag)
+		{
+            if (m_pipelineTHUMB.load() < 3) return;
+
+            const auto& instruction = m_pipelineTHUMB[2];
 
 
 
-#if _DEBUG_OUTPUT
-        std::unordered_map<Operation, const char*> operationToStringMap
-        {
-            { Operation::DataProcessing, "DataProcessing" },
-            { Operation::Multiply, "Multiply" },
-            { Operation::MultiplyLong, "MultiplyLong" },
-            { Operation::SingleDataSwap, "SingleDataSwap" },
-            { Operation::BranchExchange, "BranchExchange" },
-            { Operation::HalfwordDataTransferRegisterOffset, "HalfwordDataTransferRegisterOffset" },
-            { Operation::HalfwordDataTransferImmediateOffset, "HalfwordDataTransferImmediateOffset" },
-            { Operation::SingleDataTransfer, "SingleDataTransfer" },
-            { Operation::Undefined, "Undefined" },
-            { Operation::BlockDataTransfer, "BlockDataTransfer" },
-            { Operation::Branch, "Branch" },
-            { Operation::CoprocessorDataTransfer, "CoprocessorDataTransfer" },
-            { Operation::CoprocessorDataOperation, "CoprocessorDataOperation" },
-            { Operation::CoprocessorRegisterTransfer, "CoprocessorRegisterTransfer" },
-            { Operation::SoftwareInterrupt, "SoftwareInterrupt" }
-        };
+#if _DEBUG
+			const std::unordered_map<OperationTHUMB, const char*> operationToInstructionName
+			{
+			    { OperationTHUMB::MoveShiftedRegister,                "MoveShiftedRegister", },
+                { OperationTHUMB::AddSubtract,                        "AddSubtract", },
+                { OperationTHUMB::MoveCompareAddSubtractImmediate,    "MoveCompareAddSubtractImmediate", },
+                { OperationTHUMB::ALUOperations,                      "ALUOperations,"  },
+                { OperationTHUMB::HiRegisterOperationsBranchExchange, "HiRegisterOperationsBranchExchange,"  },
+                { OperationTHUMB::LoadPCRelative,                     "LoadPCRelative", },
+                { OperationTHUMB::LoadStoreRegisterOffset,            "LoadStoreRegisterOffset,"  },
+                { OperationTHUMB::LoadStoreSignExtended,              "LoadStoreSignExtended,"  },
+                { OperationTHUMB::LoadStoreImmediateOffset,           "LoadStoreImmediateOffset", },
+                { OperationTHUMB::LoadStoreHalfword,                  "LoadStoreHalfword", },
+                { OperationTHUMB::LoadStoreSPRelative,                "LoadStoreSPRelative", },
+                { OperationTHUMB::LoadAddress,                        "LoadAddress,"  },
+                { OperationTHUMB::AddOffsetToStackPointer,            "AddOffsetToStackPointer", },
+                { OperationTHUMB::PushPopRegisters,                   "PushPopRegisters", },
+                { OperationTHUMB::MultipleLoadStore,                  "MultipleLoadStore", },
+                { OperationTHUMB::ConditionalBranch,                  "ConditionalBranch", },
+                { OperationTHUMB::SoftwareInterrupt,                  "SoftwareInterrupt", },
+                { OperationTHUMB::UnconditionalBranch,                "UnconditionalBranch", },
+                { OperationTHUMB::LongBranchWithLink,                 "LongBranchWithLink", },
+			};
 
-        std::cout << "[0x" << std::hex << std::uppercase << std::setw(8) << std::setfill('0') << "address" << "] " << "0x" << std::setw(8) << std::setfill('0') << instruction << " \"" << operationToStringMap[m_operation] << "\"" << std::endl;
+
+
+			std::cout << std::format("[{:#010x}] ", instruction.address) << std::format("{0}\n", operationToInstructionName.at(m_operationTHUMB));
 #endif
 
 
 
-        using instructionFormat = void (ARM7TDMI::*)(const Instruction<dword>&);
-        const std::unordered_map<Operation, instructionFormat> operationToInstructionMap
+			using instructionFunc = void (ARM7TDMI::*)(const Instruction<word>&);
+			const std::unordered_map<OperationTHUMB, instructionFunc> operationToInstruction
+			{
+                { OperationTHUMB::MoveShiftedRegister,                &ARM7TDMI::move_shifted_register }, 
+				{ OperationTHUMB::AddSubtract,                        &ARM7TDMI::add_subtract }, 
+				{ OperationTHUMB::MoveCompareAddSubtractImmediate,    &ARM7TDMI::move_compare_add_subtract_immediate }, 
+				{ OperationTHUMB::ALUOperations,                      &ARM7TDMI::alu_operations }, 
+				{ OperationTHUMB::HiRegisterOperationsBranchExchange, &ARM7TDMI::hi_register_operations__branch_exchange }, 
+				{ OperationTHUMB::LoadPCRelative,                     &ARM7TDMI::pc_relative_load }, 
+				{ OperationTHUMB::LoadStoreRegisterOffset,            &ARM7TDMI::load_store_register_offset }, 
+				{ OperationTHUMB::LoadStoreSignExtended,              &ARM7TDMI::load_store_sign_extended }, 
+				{ OperationTHUMB::LoadStoreImmediateOffset,           &ARM7TDMI::load_store_immediate_offet }, 
+				{ OperationTHUMB::LoadStoreHalfword,                  &ARM7TDMI::load_store_halfword }, 
+				{ OperationTHUMB::LoadStoreSPRelative,                &ARM7TDMI::sp_relative_load_store }, 
+				{ OperationTHUMB::LoadAddress,                        &ARM7TDMI::load_address }, 
+				{ OperationTHUMB::AddOffsetToStackPointer,            &ARM7TDMI::add_offset_stack_pointer }, 
+				{ OperationTHUMB::PushPopRegisters,                   &ARM7TDMI::push_pop_registers },
+				{ OperationTHUMB::MultipleLoadStore,                  &ARM7TDMI::multiple_load_store }, 
+				{ OperationTHUMB::ConditionalBranch,                  &ARM7TDMI::conditional_branch }, 
+				{ OperationTHUMB::SoftwareInterrupt,                  &ARM7TDMI::software_interrupt }, 
+				{ OperationTHUMB::UnconditionalBranch,                &ARM7TDMI::unconditional_branch }, 
+				{ OperationTHUMB::LongBranchWithLink,                 &ARM7TDMI::long_branch_link }, 
+			};
+
+			std::invoke(operationToInstruction.at(m_operationTHUMB), this, instruction);
+        }
+        else
         {
-            { Operation::DataProcessing,                      &ARM7TDMI::data_processing }, 
-            { Operation::Multiply,                            &ARM7TDMI::multiply }, 
-            { Operation::MultiplyLong,                        &ARM7TDMI::multiply_long }, 
-            { Operation::SingleDataSwap,                      &ARM7TDMI::single_data_swap }, 
-            { Operation::BranchExchange,                      &ARM7TDMI::branch_exchange }, 
-            { Operation::HalfwordDataTransferRegisterOffset,  &ARM7TDMI::halfword_data_transfer }, 
-            { Operation::HalfwordDataTransferImmediateOffset, &ARM7TDMI::halfword_data_transfer }, 
-            { Operation::SingleDataTransfer,                  &ARM7TDMI::single_data_transfer }, 
-            { Operation::Undefined,                           &ARM7TDMI::undefined }, 
-            { Operation::BlockDataTransfer,                   &ARM7TDMI::block_data_transfer }, 
-            { Operation::Branch,                              &ARM7TDMI::branch }, 
-            { Operation::CoprocessorDataTransfer,             &ARM7TDMI::coprocessor_data_transfer }, 
-            { Operation::CoprocessorDataOperation,            &ARM7TDMI::coprocessor_data_operation }, 
-            { Operation::CoprocessorRegisterTransfer,         &ARM7TDMI::coprocessor_register_transfer }, 
-            { Operation::SoftwareInterrupt,                   &ARM7TDMI::software_interrupt }, 
-        };
+            if (m_pipelineARM.load() < 3) return;
 
-        
+			const auto& instruction = m_pipelineARM[2];
 
-        std::invoke(operationToInstructionMap.at(m_operation), this, instruction);
+            if (!check_condition(instruction, cpsr))
+            {
+                //std::cout << std::format("[{:#010x}] Not executed\n", instruction.address);
+
+                return;
+            }
+
+
+
+#if _DEBUG
+            const std::unordered_map<OperationARM, const char*> operationToInstructionName
+            {
+                { OperationARM::DataProcessing,                      "DataProcessing" },
+                { OperationARM::Multiply,                            "Multiply" },
+                { OperationARM::MultiplyLong,                        "MultiplyLong" },
+                { OperationARM::SingleDataSwap,                      "SingleDataSwap" },
+                { OperationARM::BranchExchange,                      "BranchExchange" },
+                { OperationARM::HalfwordDataTransferRegisterOffset,  "HalfwordDataTransferRegisterOffset" },
+                { OperationARM::HalfwordDataTransferImmediateOffset, "HalfwordDataTransferImmediateOffset" },
+                { OperationARM::SingleDataTransfer,                  "SingleDataTransfer" },
+                { OperationARM::Undefined,                           "Undefined" },
+                { OperationARM::BlockDataTransfer,                   "BlockDataTransfer" },
+                { OperationARM::Branch,                              "Branch" },
+                { OperationARM::CoprocessorDataTransfer,             "CoprocessorDataTransfer" },
+                { OperationARM::CoprocessorDataOperation,            "CoprocessorDataOperation" },
+                { OperationARM::CoprocessorRegisterTransfer,         "CoprocessorRegisterTransfer" },
+                { OperationARM::SoftwareInterrupt,                   "SoftwareInterrupt" }
+            };
+
+
+
+            std::cout << std::format("[{:#010x}] ", instruction.address) << std::format("{0}\n", operationToInstructionName.at(m_operationARM));
+#endif
+
+
+
+            using instructionFunc = void (ARM7TDMI::*)(const Instruction<dword>&);
+            const std::unordered_map<OperationARM, instructionFunc> operationToInstruction
+            {
+                { OperationARM::DataProcessing,                      &ARM7TDMI::data_processing               },
+                { OperationARM::Multiply,                            &ARM7TDMI::multiply                      },
+                { OperationARM::MultiplyLong,                        &ARM7TDMI::multiply_long                 },
+                { OperationARM::SingleDataSwap,                      &ARM7TDMI::single_data_swap              },
+                { OperationARM::BranchExchange,                      &ARM7TDMI::branch_exchange               },
+                { OperationARM::HalfwordDataTransferRegisterOffset,  &ARM7TDMI::halfword_data_transfer        },
+                { OperationARM::HalfwordDataTransferImmediateOffset, &ARM7TDMI::halfword_data_transfer        },
+                { OperationARM::SingleDataTransfer,                  &ARM7TDMI::single_data_transfer          },
+                { OperationARM::Undefined,                           &ARM7TDMI::undefined                     },
+                { OperationARM::BlockDataTransfer,                   &ARM7TDMI::block_data_transfer           },
+                { OperationARM::Branch,                              &ARM7TDMI::branch                        },
+                { OperationARM::CoprocessorDataTransfer,             &ARM7TDMI::coprocessor_data_transfer     },
+                { OperationARM::CoprocessorDataOperation,            &ARM7TDMI::coprocessor_data_operation    },
+                { OperationARM::CoprocessorRegisterTransfer,         &ARM7TDMI::coprocessor_register_transfer },
+                { OperationARM::SoftwareInterrupt,                   &ARM7TDMI::software_interrupt            },
+            };
+
+            std::invoke(operationToInstruction.at(m_operationARM), this, instruction);
+        }
     }
 
+    void ARM7TDMI::switch_mode(OperatingMode operatingMode)
+	{
+		auto& cpsr = m_registers.get_cpsr();
+
+		cpsr = set_bits<dword>(cpsr, 0, 5, static_cast<int>(operatingMode));
+		m_registers.bank(operatingMode);
+	}
+	
     void ARM7TDMI::exception()
     {
         //p.62;
@@ -202,17 +284,49 @@ namespace dot::gba
     }
 
 
-    
+
+    bool ARM7TDMI::check_condition(const Instruction<dword>& instruction, const PSR& cpsr)
+	{
+		const auto condition = get_bits(instruction, 28, 4);
+
+		const auto N = cpsr.flag(PSR::Flag::Negative);
+		const auto Z = cpsr.flag(PSR::Flag::Zero);
+		const auto C = cpsr.flag(PSR::Flag::Carry);
+		const auto V = cpsr.flag(PSR::Flag::Overflow);
+
+		switch (condition)
+		{
+			case 0xE: return true;			                               //AL
+			case 0xF: return false;			                               //RESERVED
+
+			case 0x0: return  Z;			                               //EQ
+			case 0x1: return !Z;			                               //NE
+			case 0x2: return  C;			                               //CS
+			case 0x3: return !C;			                               //CC
+			case 0x4: return  N;			                               //MI
+			case 0x5: return !N;			                               //PL
+			case 0x6: return  V;			                               //VS
+			case 0x7: return !V;			                               //VC
+			case 0x8: return  C && !Z;		                               //HI
+			case 0x9: return !C || Z;		                               //LS
+			case 0xA: return  N == V;		                               //GE
+			case 0xB: return  N != V;		                               //LT
+			case 0xC: return !Z && (N == V);                               //GT
+			case 0xD: return  Z || (N != V);                               //LE
+
+			default:  return false;
+		}
+	}
     std::pair<dword, bit> ARM7TDMI::shift_carry(dword value, ShiftType type, dword amount, bit carryFlag)
     {
-        dword result{};                                                        //Result after shift function
-        bit carryOut{};                                                        //Carryout bit
+        dword result{};
+        bit carryOut{};
 
-        const auto dwordSize = sizeof(dword) * 8;                              //Total amount of bits in value
+        const auto dwordSize = sizeof(dword) * 8;
 
 
         
-        using shiftFunc = std::function<void()>;                               //TODO: if destination register is r15, increment its value by 4
+        using shiftFunc = std::function<void()>;
         
         const auto lsl_eq0  = [&]()
         {
@@ -332,9 +446,8 @@ namespace dot::gba
     }
 
 
-
-//ARM Instructions
-#pragma region Data Processing
+	
+    //ARM Instructions
     void ARM7TDMI::data_processing(const Instruction<dword>& instruction)
     {
         const auto rdIndex  = get_bits(instruction, 12,  4);
@@ -347,34 +460,11 @@ namespace dot::gba
         auto& rd = m_registers[rdIndex];
         dword rn = m_registers[rnIndex];
         dword op2{};
+		
+        Register<dword> result{};
 
         auto& cpsr = m_registers.get_cpsr();
         auto carry = cpsr.flag(PSR::Flag::Carry);
-
-
-        
-        enum class FunctionType { Logical, Arithmetic };
-
-        using dataProcessingFunc = void (ARM7TDMI::*)(Register<dword>&, dword, dword);
-        const std::array<std::pair<dataProcessingFunc, FunctionType>, 16> functionByType
-        {
-            std::make_pair( &ARM7TDMI::i_and, FunctionType::Logical ), 
-            std::make_pair( &ARM7TDMI::i_eor, FunctionType::Logical ), 
-            std::make_pair( &ARM7TDMI::i_sub, FunctionType::Arithmetic ), 
-            std::make_pair( &ARM7TDMI::i_rsb, FunctionType::Arithmetic ), 
-            std::make_pair( &ARM7TDMI::i_add, FunctionType::Arithmetic ), 
-            std::make_pair( &ARM7TDMI::i_adc, FunctionType::Arithmetic ), 
-            std::make_pair( &ARM7TDMI::i_sbc, FunctionType::Arithmetic ), 
-            std::make_pair( &ARM7TDMI::i_rsc, FunctionType::Arithmetic ), 
-            std::make_pair( &ARM7TDMI::i_tst, FunctionType::Logical ), 
-            std::make_pair( &ARM7TDMI::i_teq, FunctionType::Logical ), 
-            std::make_pair( &ARM7TDMI::i_cmp, FunctionType::Arithmetic ), 
-            std::make_pair( &ARM7TDMI::i_cmn, FunctionType::Arithmetic ), 
-            std::make_pair( &ARM7TDMI::i_orr, FunctionType::Logical ), 
-            std::make_pair( &ARM7TDMI::i_mov, FunctionType::Logical ), 
-            std::make_pair( &ARM7TDMI::i_bic, FunctionType::Logical ), 
-            std::make_pair( &ARM7TDMI::i_mvn, FunctionType::Logical ), 
-        };
 
 
         
@@ -389,14 +479,14 @@ namespace dot::gba
         else                                                                   
         {
             const auto rmIndex = get_bits(instruction, 0, 4);
-            const auto shift   = get_bits(instruction, 5, 2);
-            const auto rFlag   = get_bit(instruction, 4);
+            const auto shiftOp = get_bits(instruction, 5, 2);
+            const auto rFlag   = get_bit (instruction, 4);
             
-            dword rm = m_registers[rmIndex];     
+            dword rm = m_registers[rmIndex];
             dword shiftAmount{};
-            auto shiftType = static_cast<ShiftType>(shift);
+            const auto shiftType = static_cast<ShiftType>(shiftOp);
             
-            if (rnIndex == 15) rn += 4;                                        //Adjust for prefetch if Rn is PC
+            if (rnIndex == 15) rn += 4;                                        //"If a register is used to specify the shift amount, the PC will be 12 bytes ahead"
             if (rFlag)
             {
                 const auto rsIndex = get_bits(instruction, 8, 4);
@@ -412,150 +502,96 @@ namespace dot::gba
             std::tie(op2, carry) = shift_carry(rm, shiftType, shiftAmount, carry);
         }
 
-        
-        
-        const auto& [dpFunc, type] = functionByType.at(opcode);                  
-        Register<dword> result{};                                              //Store the result in a placeholder value => not all operations may write back to the destination register
-        
-        const auto isTest = get_bit(opcode, 3) && !get_bit(opcode, 2);         //TST, TEQ, CMP and CMN instructions have bit pattern [0b10xx]
 
-        if (isTest)                                                            
-        {
-            if (sFlag) std::invoke(dpFunc, this, result, rn, op2);               
-            else       return psr_transfer(instruction);                       //S flag set => instruction is a PSR transfer
-        }
-        else                                                                   
-        {
-            std::invoke(dpFunc, this, rd, rn, op2);                              
-            result = rd;                                                       
-        }
-        
+		
+        const auto isTest = get_bit(opcode, 3) && !get_bit(opcode, 2);
+        if (isTest && !sFlag) return psr_transfer(instruction);
+		
+		switch (opcode)
+		{
+			case 0b0000: rd = rn & op2;             break;                     //AND
+			case 0b0001: rd = rn ^ op2;             break;                     //EOR
+			case 0b0010: rd = rn - op2;             break;                     //SUB
+			case 0b0011: rd = op2 - rn;             break;                     //RSB
+			case 0b0100: rd = rn + op2;             break;                     //ADD
+			case 0b0101: rd = rn + op2 + carry;     break;                     //ADC
+			case 0b0110: rd = rn - op2 - carry - 1; break;                     //SBC, TODO: -1? + carry bit
+			case 0b0111: rd = op2 - rn + carry - 1; break;                     //RSC
+			case 0b1000: result = rn & op2;         break;                     //TST
+			case 0b1001: result = rn ^ op2;         break;                     //TEQ
+			case 0b1010: result = rn - op2;         break;                     //CMP
+			case 0b1011: result = rn + op2;         break;                     //CMN
+			case 0b1100: rd = rn | op2;             break;                     //ORR
+			case 0b1101: rd = op2;                  break;                     //MOV
+			case 0b1110: rd = rn & ~op2;            break;                     //BIC
+			case 0b1111: rd = ~op2;                 break;                     //MVN
+
+			default:                                throw std::invalid_argument("Invalid opcode");
+		}
+
+        if (!isTest) result = rd;                                              //Result will be used for flags
+
         
 
+		enum class FunctionType { Logical, Arithmetic };
+		const std::unordered_map<unsigned int, FunctionType> opcodeToFunctionType
+		{
+			{ 0b0000, FunctionType::Logical },
+			{ 0b0001, FunctionType::Logical },
+			{ 0b0010, FunctionType::Arithmetic },
+			{ 0b0011, FunctionType::Arithmetic },
+			{ 0b0100, FunctionType::Arithmetic },
+			{ 0b0101, FunctionType::Arithmetic },
+			{ 0b0110, FunctionType::Arithmetic },
+			{ 0b0111, FunctionType::Arithmetic },
+			{ 0b1000, FunctionType::Logical },
+			{ 0b1001, FunctionType::Logical },
+			{ 0b1010, FunctionType::Arithmetic },
+			{ 0b1011, FunctionType::Arithmetic },
+			{ 0b1100, FunctionType::Logical },
+			{ 0b1101, FunctionType::Logical },
+			{ 0b1110, FunctionType::Logical },
+			{ 0b1111, FunctionType::Logical },
+		};
+		
         if (sFlag)
         {
             if (rdIndex == 15)                                                 //Special case if the destination register is the PC
             {
-                cpsr = m_registers.get_spsr();
+                cpsr = m_registers.get_spsr(cpsr.mode());
+
+                const auto tFlag = cpsr[5];
+				
+                if (tFlag) m_pipelineTHUMB.flush();
+                else       m_pipelineARM.flush();
             }
             else
             {
-                cpsr = set_bit<dword>(cpsr, PSR::Flag::Negative, result[31]);  
-                cpsr = set_bit<dword>(cpsr, PSR::Flag::Zero,     result == 0); 
-                cpsr = set_bit<dword>(cpsr, PSR::Flag::Carry,    carry);       
+				const auto functionType = opcodeToFunctionType.at(opcode);
 
-                if (type == FunctionType::Arithmetic)                          
+                cpsr.set_flag(PSR::Flag::Negative, result[31]);  
+                cpsr.set_flag(PSR::Flag::Zero,     result == 0); 
+                cpsr.set_flag(PSR::Flag::Carry,    carry);       
+
+                if (functionType == FunctionType::Arithmetic)                          
                 {
-                    const auto signRn     = get_bit(rn, 31);                   //Check for overflow by comparing the sign of the operands
-                    const auto signOp2    = get_bit(op2, 31);                  //If the signs are the same, but the result has a different sign, overflow has occurred
+                    const auto signRn     = get_bit(rn,     31);               //Check for overflow by comparing the sign of the operands
+                    const auto signOp2    = get_bit(op2,    31);               //If the signs are the same, but the result has a different sign, overflow has occurred
                     const auto signResult = get_bit(result, 31);               //(i.e. the sign of the result is different from the signs of the operands)
 
                     const auto v = ((signRn == signOp2) && (signResult != signRn));
-                    cpsr = set_bit<dword>(cpsr, PSR::Flag::Overflow, v);
+                    cpsr.set_flag(PSR::Flag::Overflow, v);
                 }
             }
         }
-
-
-
-#if _DEBUG_OUTPUT
-        std::unordered_map<unsigned int, const char*> opcodeToFunctionMap
-        {
-            {  0, "AND" },  { 1, "EOR" }, {  2, "SUB" }, {  3, "RSB" }, 
-            {  4, "ADD" },  { 5, "ADC" }, {  6, "SBC" }, {  7, "RSC" }, 
-            {  8, "TST" },  { 9, "TEQ" }, { 10, "CMP" }, { 11, "CMN" }, 
-            { 12, "ORR" }, { 13, "MOV" }, { 14, "BIC" }, { 15, "MVN" }, 
-        };
-
-        std::cout.copyfmt(std::ios(nullptr));
-
-        std::cout << '(' << opcodeToFunctionMap[opcode] << ") ";
-        std::cout << "Rd[" << std::to_string(rdIndex) << "] = {" << std::to_string(rd) << "} | ";
-        std::cout << "Rn[" << std::to_string(rnIndex) << "] = {" << std::to_string(rn) << "} | ";
-        std::cout << "Operand2 = {" << op2 << "} | ";
-        std::cout << "Result = {" << result << '}' << '\n';
-        
-        std::bitset<4> bitset = m_registers.get_cpsr() >> 28;
-        std::cout << "Set: " << std::boolalpha << sFlag << ", CPSR = {" << bitset << "}\n\n";
-#endif
     }
-
-    void ARM7TDMI::i_and(Register<dword>& rd, dword rn, dword op2)
-    {
-        rd = rn & op2;
-    }
-    void ARM7TDMI::i_eor(Register<dword>& rd, dword rn, dword op2)
-    {
-        rd = rn ^ op2;
-    }
-    void ARM7TDMI::i_sub(Register<dword>& rd, dword rn, dword op2)
-    {
-        rd = rn - op2;
-    }
-    void ARM7TDMI::i_rsb(Register<dword>& rd, dword rn, dword op2)
-    {
-        rd = op2 - rn;
-    }
-    void ARM7TDMI::i_add(Register<dword>& rd, dword rn, dword op2)
-    {
-        rd = rn + op2;
-    }
-    void ARM7TDMI::i_adc(Register<dword>& rd, dword rn, dword op2)
-    {
-        auto carry = m_registers.get_cpsr().flag(PSR::Flag::Carry);
-        rd = rn + op2 + carry;
-    }
-    void ARM7TDMI::i_sbc(Register<dword>& rd, dword rn, dword op2)
-    {
-        auto carry = m_registers.get_cpsr().flag(PSR::Flag::Carry);
-        rd = rn - op2 + carry - 1;
-    }
-    void ARM7TDMI::i_rsc(Register<dword>& rd, dword rn, dword op2)
-    {
-        auto carry = m_registers.get_cpsr().flag(PSR::Flag::Carry);
-        rd = op2 - rn + carry - 1;
-    }
-    void ARM7TDMI::i_tst(Register<dword>& rd, dword rn, dword op2)
-    {
-        rd = rn & op2;
-    }
-    void ARM7TDMI::i_teq(Register<dword>& rd, dword rn, dword op2)
-    {
-        rd = rn ^ op2;
-    }
-    void ARM7TDMI::i_cmp(Register<dword>& rd, dword rn, dword op2)
-    {
-        rd = rn - op2;
-    }
-    void ARM7TDMI::i_cmn(Register<dword>& rd, dword rn, dword op2)
-    {
-        rd = rn + op2;
-    }
-    void ARM7TDMI::i_orr(Register<dword>& rd, dword rn, dword op2)
-    {
-        rd = rn | op2;
-    }
-    void ARM7TDMI::i_mov(Register<dword>& rd, dword rn, dword op2)
-    {
-        rd = op2;
-    }
-    void ARM7TDMI::i_bic(Register<dword>& rd, dword rn, dword op2)
-    {
-        rd = rn & ~op2;
-    }
-    void ARM7TDMI::i_mvn(Register<dword>& rd, dword rn, dword op2)
-    {
-        rd = ~op2;
-    }
-#pragma endregion
-#pragma region PSR Transfer
     void ARM7TDMI::psr_transfer(const Instruction<dword>& instruction)
     {
-        const auto mFlag = get_bit(instruction, 21);
         const auto pFlag = get_bit(instruction, 22);
+        const auto mFlag = get_bit(instruction, 21);
         
         auto& cpsr = m_registers.get_cpsr();
-        auto& spsr = m_registers.get_spsr();
+        auto& spsr = m_registers.get_spsr(cpsr.mode());
 
 
 		
@@ -569,9 +605,10 @@ namespace dot::gba
 
             if (iFlag)
             {
-                dword op2    = get_bits(instruction, 0, 12);
-                dword imm    = get_bits(op2,         0,  8);
-                dword rotate = get_bits(op2,         8,  4) * 2;
+                const auto operand2 = get_bits(instruction, 0, 12);
+
+                dword imm    = get_bits(operand2, 0,  8);
+                dword rotate = get_bits(operand2, 8,  4) * 2;
 
                 result = shift(imm, ShiftType::ROR, rotate);
             }
@@ -582,9 +619,9 @@ namespace dot::gba
 
             
             
-            for (int i = 16; i < 20; ++i)                                      //cpsr_fsxc or something => NBA github
+            for (int i = 0; i < 4; ++i)                                        //cpsr_fsxc or something
             {
-                if (get_bit(instruction, i))
+                if (get_bit(instruction, i + 16))
                 {
                     mask |= 0xFF;
                     mask <<= 4;
@@ -595,16 +632,16 @@ namespace dot::gba
 			
             if (pFlag)
             {
-                i_msr(spsr, result, mask);
+				spsr = (spsr & ~mask) | (result & mask);
             }
             else
             {
                 if (cpsr.mode() == OperatingMode::USR) mask   &= 0xFF000000;
                 if (mask & 0xFF)                       result |= 0x00000010;   //idk
 
+                __debugbreak();
                 //TODO: switch mode?
-
-                i_msr(cpsr, result, mask);
+				//cpsr = (cpsr & ~mask) | (result & mask); //remove this
             }
         }
         else
@@ -613,21 +650,10 @@ namespace dot::gba
 			
             auto& rd = m_registers[rdIndex];
 
-            if (pFlag) i_mrs(rd, spsr);
-            else          i_mrs(rd, cpsr);
+            if (pFlag) rd = spsr;
+            else       rd = cpsr;
         }
     }
-
-    void ARM7TDMI::i_mrs(Register<dword>& rd, const PSR& psr)
-    {
-        rd = psr;
-    }
-    void ARM7TDMI::i_msr(PSR& psr, dword op2, dword mask)
-    {
-        psr = (psr & ~mask) | (op2 & mask);
-    }
-#pragma endregion
-#pragma region Multiply
     void ARM7TDMI::multiply(const Instruction<dword>& instruction)
     {
         const auto rdIndex = get_bits(instruction, 16, 4);
@@ -646,13 +672,12 @@ namespace dot::gba
         
         if (aFlag)
         {
-            i_mla(rd, rn, rm, rs);
+            rd = rm * rs + rn;
         }
         else
         {
-            i_mul(rd, rm, rs);
-            
-            rn = 0;
+            rd = rm * rs;
+            rn = 0;                                                            //"Rn is ignored and should be set to zero for compatibility"
         }
 
 
@@ -660,97 +685,57 @@ namespace dot::gba
         if (sFlag)
         {
             auto& cpsr = m_registers.get_cpsr();
-
-            cpsr = set_bit<dword>(cpsr, PSR::Flag::Negative, rd[31]);          
-            cpsr = set_bit<dword>(cpsr, PSR::Flag::Zero,     rd == 0);         
-            cpsr = set_bit<dword>(cpsr, PSR::Flag::Carry,    false);           
-            cpsr = set_bit<dword>(cpsr, PSR::Flag::Overflow, false);           
+			
+            cpsr.set_flag(PSR::Flag::Negative, rd[31]);          
+            cpsr.set_flag(PSR::Flag::Zero,     rd == 0);         
+            cpsr.set_flag(PSR::Flag::Carry,    false);
+            cpsr.set_flag(PSR::Flag::Overflow, false);
         }
-    }
 
-    void ARM7TDMI::i_mul(Register<dword>& rd, dword rm, dword rs)
-    {
-        rd = rm * rs;
-    }
-    void ARM7TDMI::i_mla(Register<dword>& rd, dword rn, dword rm, dword rs)
-    {
-        rd = rm * rs + rn;
-    }
-#pragma endregion
-#pragma region Multiply Long
+        if (rdIndex == 15) m_pipelineARM.flush();
+    }	
     void ARM7TDMI::multiply_long(const Instruction<dword>& instruction)
     {
         const auto rdhiIndex = get_bits(instruction, 16, 4);
 		const auto rdloIndex = get_bits(instruction, 12, 4);
 		const auto rmIndex   = get_bits(instruction,  0, 4);
 		const auto rsIndex   = get_bits(instruction,  8, 4);
-		const auto aFlag     = get_bit(instruction, 21);
-		const auto sFlag     = get_bit(instruction, 20);
+		const auto uFlag     = get_bit (instruction, 22);
+		const auto aFlag     = get_bit (instruction, 21);
+		const auto sFlag     = get_bit (instruction, 20);
 		
         auto& rdhi = m_registers[rdhiIndex];
         auto& rdlo = m_registers[rdloIndex];
         dword rm   = m_registers[rmIndex];
         dword rs   = m_registers[rsIndex];
+		
+        long long result{};
 
 
 
-        using mullFunc = void(ARM7TDMI::*)(Register<dword>&, Register<dword>&, dword, dword);
-        const std::unordered_map<unsigned int, mullFunc> mulFuncs
-        {
-            { 0b00, &ARM7TDMI::i_umull }, 
-            { 0b01, &ARM7TDMI::i_smull }, 
-            { 0b10, &ARM7TDMI::i_umlal }, 
-            { 0b11, &ARM7TDMI::i_smlal }, 
-        };
-
-        const auto pattern = (aFlag << 1) | static_cast<unsigned int>(sFlag);
-        std::invoke(mulFuncs.at(pattern), this, rdhi, rdlo, rm, rs);
-
+        if (uFlag) result = static_cast<long long>(static_cast<int>(rm)) * static_cast<long long>(static_cast<int>(rs)); //Intermediate cast is required
+        else       result = static_cast<qword>(rm) * static_cast<qword>(rs);
         
+        if (aFlag) result += ((static_cast<long long>(rdhi) << 32) | static_cast<long long>(rdlo));
+
+		rdhi = static_cast<dword>(result >> 32);
+		rdlo = static_cast<dword>(result);
+		
+
         
         if (sFlag)
         {
             auto& cpsr = m_registers.get_cpsr();
+            const auto z = (rdhi == 0) && (rdlo == 0);
 
-            cpsr = set_bit<dword>(cpsr, PSR::Flag::Negative, rdhi[31]);
-            cpsr = set_bit<dword>(cpsr, PSR::Flag::Zero,     rdhi == 0 && rdlo == 0);
-            cpsr = set_bit<dword>(cpsr, PSR::Flag::Carry,    false);
-            cpsr = set_bit<dword>(cpsr, PSR::Flag::Overflow, false);
+            cpsr.set_flag(PSR::Flag::Negative, rdhi[31]);
+            cpsr.set_flag(PSR::Flag::Zero,     z);
+            cpsr.set_flag(PSR::Flag::Carry,    false);
+            cpsr.set_flag(PSR::Flag::Overflow, false);
         }
-    }
 
-    void ARM7TDMI::i_umull(Register<dword>& rdhi, Register<dword>& rdlo, dword rm, dword rs)
-    {
-        auto result = static_cast<qword>(rm) * static_cast<qword>(rs);
-
-        rdhi = get_bits(result, 32, 32);
-        rdlo = static_cast<dword>(result);
+        if (rdhiIndex == 15 || rdloIndex == 15) m_pipelineARM.flush();
     }
-    void ARM7TDMI::i_smull(Register<dword>& rdhi, Register<dword>& rdlo, dword rm, dword rs)
-    {
-		auto result = static_cast<long long>(rm) * static_cast<long long>(rs);
-		
-        rdhi = get_bits(result, 32, 32);
-        rdlo = static_cast<dword>(result);
-    }
-    void ARM7TDMI::i_umlal(Register<dword>& rdhi, Register<dword>& rdlo, dword rm, dword rs)
-    {
-		auto value = static_cast<qword>(rdhi) << 32 | rdlo;
-        auto result = static_cast<qword>(rm) * static_cast<qword>(rs) + value;
-
-        rdhi = get_bits(result, 32, 32);
-        rdlo = static_cast<dword>(result);
-    }
-    void ARM7TDMI::i_smlal(Register<dword>& rdhi, Register<dword>& rdlo, dword rm, dword rs)
-    {
-		auto value = static_cast<long long>(rdhi) << 32 | rdlo;
-		auto result = static_cast<long long>(rm) * static_cast<long long>(rs) + value;
-
-		rdhi = get_bits(result, 32, 32);
-		rdlo = static_cast<dword>(result);
-    }
-#pragma endregion
-#pragma region Single Data Swap
     void ARM7TDMI::single_data_swap(const Instruction<dword>& instruction)
     {
         const auto rdIndex = get_bits(instruction, 12, 4);
@@ -760,55 +745,56 @@ namespace dot::gba
 
         auto& rd = m_registers[rdIndex];
         dword rn = m_registers[rnIndex];
-        auto& rm = m_registers[rmIndex];
+        dword rm = m_registers[rmIndex];
 
-
-		
-        i_swp(rd, rm, rn, bFlag);
-    }
-
-    void ARM7TDMI::i_swp(Register<dword>& rd, Register<dword>& rm, dword rn, bool bFlag)
-    {
-        Register<dword> value{};
+		dword value{};
         dword address = rn;
 		
-        i_ldr(value, address, bFlag);
-        i_str(rm, address, bFlag);
-		rd = value;
+		
+		
+        if (bFlag)
+        {
+            value = m_BUS->read<byte>(address);
+            m_BUS->write<byte>(address, rm);
+        }
+        else
+        {
+            value = m_BUS->read<dword>(address);                                 //TODO: readwordrotate?
+            m_BUS->write<dword>(address, rm);
+        }
+
+        rd = value;
+
+
+		
+        if (rdIndex == 15) m_pipelineARM.flush();
     }
-#pragma endregion
-#pragma region Branch and Exchange
     void ARM7TDMI::branch_exchange(const Instruction<dword>& instruction)
     {
 		const auto rnIndex = get_bits(instruction, 0, 4);
 
         dword rn = m_registers[rnIndex];
 
-
 		
-        i_bx(rn);
-        m_pipeline.flush();                                                    //The branch causes a pipeline flush
-    }
 
-    void ARM7TDMI::i_bx(dword rn)
-    {
-        auto& cpsr = m_registers.get_cpsr();
-        const auto tFlag = get_bit(rn, 0);
+		const auto tFlag = get_bit(rn, 0);
 
-
-		
         if (tFlag)
         {
-            m_registers.pc = rn & (~0u - 1);
-            cpsr = set_bit<dword>(cpsr, PSR::Flag::Thumb, tFlag);              //If bit 0 is set, the processor is in thumb mode
+			m_registers.pc = rn & ~0x1;
+            m_pipelineTHUMB.flush();
         }
         else
         {
-            m_registers.pc = rn & (~0u - 3);
+            m_registers.pc = rn & ~0x3;
+            m_pipelineARM.flush();
         }
+		
+
+		
+		auto& cpsr = m_registers.get_cpsr();
+        cpsr.set_flag(PSR::Flag::Thumb, tFlag);
     }
-#pragma endregion
-#pragma region Halfword Data Transfer
     void ARM7TDMI::halfword_data_transfer(const Instruction<dword>& instruction)
     {
 		const auto rdIndex = get_bits(instruction, 12, 4);
@@ -823,7 +809,7 @@ namespace dot::gba
 		const auto hFlag   = get_bit (instruction,  5);
 
         auto& rd = m_registers[rdIndex];
-        dword rn = m_registers[rnIndex];
+        auto& rn = m_registers[rnIndex];
         dword rm = m_registers[rmIndex];
         
         dword offset{};
@@ -831,51 +817,46 @@ namespace dot::gba
         
         
 
-        if (iFlag) offset   = ((instruction >> 4) & 0xF0) | (instruction & 0xF); //TODO
-        else       offset   =     rm;
-        if (uFlag) offset  *=     -1;
-        if (pFlag) address += offset;
+        if (iFlag)  offset   = ((instruction >> 4) & 0xF0) | (instruction & 0xF);
+        else        offset   = rm;
+        if (!uFlag) offset  *= -1;
+        if (pFlag)  address += offset;
 
 
-        
-        using halfwordFunc = void(ARM7TDMI::*)(Register<dword>&, dword);
-        const std::unordered_map<unsigned int, halfwordFunc> halfwordFuncs     //TODO: check if mappings are correct (strh == 0b00?)
+
+        const auto mask = (sFlag << 1) | static_cast<int>(hFlag);
+
+        switch (mask) //TODO: double check
         {
-            { 0b00, &ARM7TDMI::i_strh },
-            { 0b01, &ARM7TDMI::i_ldrh },
-            { 0b10, &ARM7TDMI::i_strh },
-            { 0b11, &ARM7TDMI::i_ldrsb }
-        };
+            case 0b00: return single_data_swap(instruction);
+			case 0b01:
+            {
+                if (lFlag) rd = m_BUS->read<word>(address);                      //TODO: readhalfrotate
+                else       m_BUS->write<word>(address, rd);
 
-        auto mask = (sFlag << 1) | static_cast<unsigned int>(hFlag);
-        std::invoke(halfwordFuncs.at(mask), this, rd, address);
+                break;
+            }
+			case 0b10: 
+            {
+                if (lFlag) rd = m_BUS->read<byte>(address);
+                else       m_BUS->write<byte>(address, rd);
+
+                break;
+            }
+			case 0b11: 
+            {
+                if (lFlag) rd = sign_extend<int, 15>(m_BUS->read<word>(address));
+                else       m_BUS->write<word>(address, rd);
+
+                break;
+            }
+        }
+
 		
-        const auto flush = get_bit(mask, 0);
-        if (flush) m_pipeline.flush();
-
-        
-        
-        if (!pFlag && wFlag) rn += offset;
+		
+        if (!pFlag && wFlag)        rn += offset;
+        if (lFlag && rdIndex == 15) m_pipelineARM.flush();
     }
-
-    void ARM7TDMI::i_ldrh(Register<dword>& rd, dword address) //TODO: zero extend
-    {
-        rd = bus->read<word>(address);
-    }
-    void ARM7TDMI::i_strh(Register<dword>& rd, dword address)
-    {
-        bus->write<word>(address, rd);
-    }
-    void ARM7TDMI::i_ldrsb(Register<dword>& rd, dword address) //TODO: sign extend
-    {
-        rd = bus->read<byte>(address);
-    }
-    void ARM7TDMI::i_ldrsh(Register<dword>& rd, dword address) //TODO: sign extend
-    {
-        rd = bus->read<word>(address);
-    }
-#pragma endregion
-#pragma region Single Data Transfer
     void ARM7TDMI::single_data_transfer(const Instruction<dword>& instruction)
     {
 		const auto rdIndex  = get_bits(instruction, 12, 4);
@@ -892,7 +873,7 @@ namespace dot::gba
         auto& rn = m_registers[rnIndex];
 
         dword address = rn;
-        word offset{}; //for lack of a better name
+        dword offset{};
 		
 
 
@@ -910,107 +891,79 @@ namespace dot::gba
 
             offset = shift_carry(rm, shiftType, amount, carry).first;
         }
+        else
+        {
+            offset = offset12;
+        }
 
-        
-
-        if (uFlag) offset *= -1;        
-        if (pFlag) address += offset;
+        if (!uFlag) offset  *= -1;
+        if (pFlag)  address += offset;
         
 
         
         if (lFlag)
         {
-            i_ldr(rd, address, bFlag);
+			if (bFlag)
+			{
+                rd = m_BUS->read<byte>(address);
+			}
+			else
+			{
+				auto rotate = (address & 0x3) << 3;                            //Check for unaligned address
+				auto value = m_BUS->read<dword>(address);                        //TODO: rotate lambda function
+				
+				rd = (value >> rotate) | (value << (32 - rotate));             //Rotate the value to the correct position in case of unaligned access
+			}
 
-            if (rdIndex == 15) m_pipeline.flush();
+            if (rdIndex == 15) m_pipelineARM.flush();
         }
         else
         {
             Register<dword> value = rd;
             if (rdIndex == 15) value += 4;
 
-            i_str(value, offset12, bFlag);
+			if (bFlag)
+			{
+				byte bt = rd & 0xFF;
+				dword result = (bt << 24 | bt << 16 | bt << 8 | bt);           //Bits [0-7] are repeated across entire dword
+
+				m_BUS->write<dword>(address, result);
+			}
+			else
+			{
+				m_BUS->write<dword>(address, rd);
+			}
         }
 
 
         
         if (!pFlag && wFlag) rn += offset12;
-
-
-        
-#if _DEBUG_OUTPUT
-        std::cout.copyfmt(std::ios(nullptr));
-
-        if (lFlag) std::cout << "(LDR) ";
-        else                                                std::cout << "(STR) ";
-        
-        std::cout << "Rd[" << std::to_string(rdIndex) << "] = {" << std::to_string(rd) << "} | ";
-        std::cout << "Rn[" << std::to_string(rnIndex) << "] = {" << std::to_string(rn) << "} | ";
-        std::cout << "Offset = {" << std::to_string(offset12) << '}' << "\n\n";
-#endif
+        if (lFlag && rdIndex == 15) m_pipelineARM.flush();
     }
-
-    void ARM7TDMI::i_ldr(Register<dword>& rd, dword address, bool isByte)
-    {
-        if (isByte)
-        {
-            rd = bus->read<byte>(address) & 0xF;
-        }
-        else
-        {
-            auto rotate = (address & 0x3) << 3;                                //Check for unaligned address
-            
-            auto value = bus->read<dword>(address);                            //TODO: rotate lambda function
-            rd = (value >> rotate) | (value << (32 - rotate));                 //Rotate the value to the correct position in case of unaligned access
-        }
-    }
-    void ARM7TDMI::i_str(Register<dword>& rd, dword address, bool isByte)
-    {
-        if (isByte)
-        {
-            dword bt = rd & 0xFF;
-            dword result = (bt << 24 | bt << 16 | bt << 8 | bt);                //Bits [0-7] are repeated across entire dword
-            
-            bus->write<dword>(address, result);
-        }
-        else
-        {
-            bus->write<dword>(address, rd);
-        }
-    }
-#pragma endregion
-#pragma region Undefined
     void ARM7TDMI::undefined(const Instruction<dword>& instruction)
     {
-        i_und();
-    }
-
-    void ARM7TDMI::i_und()
-    {
-        m_registers.map(OperatingMode::UND);
-
         auto& cpsr = m_registers.get_cpsr();
-        auto& spsr = m_registers.get_spsr();
-
+        auto& spsr = m_registers.get_spsr(OperatingMode::UND);
+		
         spsr = cpsr;
-        cpsr = set_bit<dword>(cpsr, PSR::Flag::IRQ, true);
+		
+		switch_mode(OperatingMode::UND);
+        cpsr.set_flag(PSR::Flag::IRQ, true);
 
-        m_registers[14] = m_registers[15] - 4;                                 //TODO: -4?
-        m_registers[15] = 0x04;                                                //Jump to undefined vector
-        
-        m_pipeline.flush();
+        m_registers.lr = m_registers.pc - 4;
+		m_registers.pc = 0x04;
+		
+        m_pipelineARM.flush();
     }
-#pragma endregion
-#pragma region Block Data Transfer
     void ARM7TDMI::block_data_transfer(const Instruction<dword>& instruction)
     {
-		const auto rnIndex = get_bits(instruction, 16, 4);
+		const auto rnIndex      = get_bits(instruction, 16, 4);
 		const auto registerList = get_bits(instruction, 0, 16);
-		const auto pFlag = get_bit(instruction, 24);
-		const auto uFlag = get_bit(instruction, 23);
-		const auto sFlag = get_bit(instruction, 22);
-		const auto wFlag = get_bit(instruction, 21);
-		const auto lFlag = get_bit(instruction, 20);
+		const auto pFlag        = get_bit(instruction, 24);
+		const auto uFlag        = get_bit(instruction, 23);
+		const auto sFlag        = get_bit(instruction, 22);
+		const auto wFlag        = get_bit(instruction, 21);
+		const auto lFlag        = get_bit(instruction, 20);
 
         auto& rn = m_registers[rnIndex];
         auto list = registerList;
@@ -1028,7 +981,7 @@ namespace dot::gba
             
             for (unsigned int i = 0; i < wordBits; ++i)
             {
-                if (list & (1 << i))                                           
+                if (list & (1ul << i))                                           
                 {
                     registers.emplace_back(m_registers[i]);
                 }
@@ -1038,7 +991,7 @@ namespace dot::gba
         {
             __debugbreak();
 
-            list |= 1 << 15;                                                   //Only r15 will be stored, but the base will be incremented as if every register is stored (+64);
+            list |= 1ul << 15;                                                   //Only r15 will be stored, but the base will be incremented as if every register is stored (+64);
             registers.emplace_back(m_registers[15]);
         }
 
@@ -1054,184 +1007,119 @@ namespace dot::gba
             offset *= -1;													   //In case of decrementing, the initial offset is negative
         }
         if (pFlag) address += offset;  
-        if (sFlag) m_registers.map(OperatingMode::USR);
+        if (sFlag) __debugbreak();//m_registers.bank(m_registers.get_cpsr().mode());
         
 
 
-        if (lFlag) i_ldm(registers, address);
-        else       i_stm(registers, address);
+        if (lFlag) //TODO: cleanup
+        {
+			dword offsetasd{};
+
+			for (auto& reg : registers)
+			{
+				reg.get() = m_BUS->read<dword>(static_cast<qword>(address) + offsetasd);
+
+				offsetasd += 4;
+			}
+        }
+        else
+        {
+			dword offsetdef{};
+
+			for (const auto& reg : registers)
+			{
+				m_BUS->write<dword>(static_cast<qword>(address) + offsetdef, reg.get());
+
+				offsetdef += 4;
+			}
+        }
 
         
 
         if (!pFlag && wFlag) rn += (offset * registerCount);
+        //TODO: nba github adds some code at the end
     }
-
-    void ARM7TDMI::i_ldm(std::vector<std::reference_wrapper<Register<dword>>> registers, dword address)
-    {
-        dword offset{};
-        
-        for (auto& reg : registers)
-        {
-            reg.get() = bus->read<dword>(address + offset);
-
-            offset += 4;
-        }
-    }
-    void ARM7TDMI::i_stm(std::vector<std::reference_wrapper<Register<dword>>> registers, dword address)
-    {
-        dword offset{};
-
-        for (const auto& reg : registers)
-        {
-            bus->write<dword>(address + offset, reg.get());
-
-            offset += 4;
-        }
-    }
-#pragma endregion
-#pragma region Branch
     void ARM7TDMI::branch(const Instruction<dword>& instruction)
     {
-		const auto offset = get_bits(instruction,  0, 24);
-		const auto lFlag  = get_bit (instruction, 24);
+		const auto offset24 = get_bits(instruction,  0, 24);
+		const auto lFlag    = get_bit (instruction, 24);
 
-        dword offsetR = offset;
+        dword offset = offset24;
         
-        offsetR <<= 2;
-        offsetR = sign_extend<int, 25>(offsetR);
 
-
-
-#if _DEBUG_OUTPUT
-        if (lFlag) std::cout << "(BL) ";
-        else       std::cout << "(B) ";
-        
-        std::cout << "[0x" << std::hex << std::uppercase << std::setw(8) << std::setfill('0') << "address" << "] => [0x" << std::hex << std::uppercase << std::setw(8) << std::setfill('0') << m_registers.pc + static_cast<int>(offsetR) << "]\n\n";
-#endif
+		
+        offset <<= 2;
+        offset = sign_extend<int, 25>(offset);                                 //Offset: [0:23] << 2, so bit 25 is the sign bit
 
                                                     
 
-        if (lFlag) i_bl(offset);           
-        else       i_b(offset);            
+        if (lFlag)
+        {
+			m_registers.lr = m_registers.pc - 4;
+			m_registers.pc += offset;
+        }
+        else
+        {
+            m_registers.pc += offset;
+        }
 
-        m_pipeline.flush();                                                    
+        m_pipelineARM.flush();
     }
-
-    void ARM7TDMI::i_b(dword offset)
-    {
-        m_registers.pc += offset;
-    }
-    void ARM7TDMI::i_bl(dword offset)
-    {
-        m_registers.lr  = m_registers.pc - 4;
-        m_registers.pc += offset;
-    }
-#pragma endregion
-#pragma region Coprocessor Data Transfer
     void ARM7TDMI::coprocessor_data_transfer(const Instruction<dword>& instruction)
     {
         __debugbreak();
     }
-
-    void ARM7TDMI::i_ldc()
-    {
-
-    }
-    void ARM7TDMI::i_stc()
-    {
-        
-    }
-#pragma endregion
-#pragma region Coprocessor Data Operation
     void ARM7TDMI::coprocessor_data_operation(const Instruction<dword>& instruction)
     {
         __debugbreak();
     }
-
-    void ARM7TDMI::i_cdp()
-    {
-        
-    }
-#pragma endregion
-#pragma region Coprocessor Register Transfer
     void ARM7TDMI::coprocessor_register_transfer(const Instruction<dword>& instruction)
     {
         __debugbreak();
     }
-
-    void ARM7TDMI::i_mcr()
-    {
-        
-    }
-    void ARM7TDMI::i_mrc()
-    {
-        
-    }
-#pragma endregion
-#pragma region Software Interrupt
     void ARM7TDMI::software_interrupt(const Instruction<dword>& instruction)
     {
-        i_swi();
+		auto& cpsr = m_registers.get_cpsr();
+		auto& spsr = m_registers.get_spsr(OperatingMode::SVC);
+
+		spsr = cpsr;
+		
+		switch_mode(OperatingMode::SVC);
+		cpsr.set_flag(PSR::Flag::IRQ, true);
+
+		m_registers.lr = m_registers.pc - 4;
+		m_registers.pc = 0x08;
+
+		m_pipelineARM.flush();
     }
 
-    void ARM7TDMI::i_swi()
-    {
-        m_registers.map(OperatingMode::SVC);
 
-        auto& cpsr = m_registers.get_cpsr();
-        auto& spsr = m_registers.get_spsr();
-
-        spsr = cpsr;
-        cpsr = set_bit<dword>(cpsr, PSR::Flag::IRQ, true);
-
-        m_registers[14] = m_registers[15] - 4;                                 //TODO: -4?
-        m_registers[15] = 0x08;                                                //Jump to interrupt vector
-
-        m_pipeline.flush();
-    }
-#pragma endregion
-
-//THUMB Instructions
+	
+    //THUMB Instructions
     void ARM7TDMI::move_shifted_register(const Instruction<word>& instruction)
     {
         const auto rdIndex = get_bits(instruction,  0, 3);
         const auto rsIndex = get_bits(instruction,  3, 3);
         const auto offset5 = get_bits(instruction,  6, 5);
-        const auto opcode  = get_bits(instruction, 11, 2);
+        const auto shiftOp = get_bits(instruction, 11, 2);
 
         auto& rd = m_registers[rdIndex];
         dword rs = m_registers[rsIndex];
 
         auto& cpsr = m_registers.get_cpsr();
         auto carry = cpsr.flag(PSR::Flag::Carry);
+		
 
 
-
-        const auto shiftType = static_cast<ShiftType>(opcode);
+        const auto shiftType = static_cast<ShiftType>(shiftOp);
         std::tie(rd, carry) = shift_carry(rs, shiftType, offset5, carry);
 
 
 
-		cpsr = set_bit<dword>(cpsr, PSR::Flag::Negative, rd[31]);
-        cpsr = set_bit<dword>(cpsr, PSR::Flag::Zero,     rd == 0);
-        cpsr = set_bit<dword>(cpsr, PSR::Flag::Carry,    carry);
+		cpsr.set_flag(PSR::Flag::Negative, rd[31]);
+        cpsr.set_flag(PSR::Flag::Zero,     rd == 0);
+        cpsr.set_flag(PSR::Flag::Carry,    carry);
     }
-
-    void ARM7TDMI::i_lsl()
-    {
-        
-    }
-    void ARM7TDMI::i_lsr()
-    {
-
-    }
-    void ARM7TDMI::i_asr()
-    {
-        
-    }
-
-
-
     void ARM7TDMI::add_subtract(const Instruction<word>& instruction)
     {
         const auto rdIndex  = get_bits(instruction,  0, 3);
@@ -1249,14 +1137,9 @@ namespace dot::gba
         if (iFlag) op2 = operand2;
         else       op2 = m_registers[operand2];
 
-
-
-        if (opcode) i_add(rd, rs, op2);
-        else        i_sub(rd, rs, op2);
+        if (opcode) rd = rs - op2;
+        else        rd = rs + op2;
     }
-
-
-
     void ARM7TDMI::move_compare_add_subtract_immediate(const Instruction<word>& instruction)
     {
         const auto rdIndex = get_bits(instruction,  8, 3);
@@ -1264,29 +1147,29 @@ namespace dot::gba
         const auto opcode  = get_bits(instruction, 11, 2);
 
         auto& rd   = m_registers[rdIndex];
+        Register<dword> result{};
+
         auto& cpsr = m_registers.get_cpsr();
 
 
 
-        using mcasiFunc = void(ARM7TDMI::*)(Register<dword>&, dword, dword);
-        const std::unordered_map<unsigned int, mcasiFunc> opcodeToFunction
+        switch (opcode)
         {
-            { 0b00, &ARM7TDMI::i_mov }, 
-            { 0b01, &ARM7TDMI::i_cmp },
-            { 0b10, &ARM7TDMI::i_add },
-            { 0b11, &ARM7TDMI::i_sub },
-        };
+            case 0b00: rd = offset8;          break;                           //MOV
+			case 0b01: result = rd - offset8; break;                           //CMP, may not write to rd
+            case 0b10: rd += offset8;         break;                           //ADD
+            case 0b11: rd -= offset8;         break;                           //SUB
 
-        std::invoke(opcodeToFunction.at(opcode), this, rd, 0, offset8);
+			default:                          throw std::runtime_error("Invalid opcode");
+        }
+		
+		if (opcode != 0b01) result = rd;                                       //Set the cpsr flags based on the result
 
+		
 
-
-		cpsr = set_bit<dword>(cpsr, PSR::Flag::Negative, 0);
-		cpsr = set_bit<dword>(cpsr, PSR::Flag::Zero,     rd == 0);
+		cpsr.set_flag(PSR::Flag::Negative, result[31]);
+		cpsr.set_flag(PSR::Flag::Zero,     result == 0);
     }
-
-
-
     void ARM7TDMI::alu_operations(const Instruction<word>& instruction)
     {
         const auto rdIndex = get_bits(instruction, 0, 3);
@@ -1295,116 +1178,475 @@ namespace dot::gba
 
         auto& rd = m_registers[rdIndex];
         dword rs = m_registers[rsIndex];
+        Register<dword> result{};
 
-
-
-        using aluFunc = void(ARM7TDMI::*)(Register<dword>&, dword);
-        const std::unordered_map<unsigned int, aluFunc> opcodeToFunction
+        auto& cpsr = m_registers.get_cpsr();
+		auto carry = cpsr.flag(PSR::Flag::Carry);
+		
+		
+		
+        switch (opcode)
         {
-            { 0b0000, &ARM7TDMI::it_and }, 
-            { 0b0001, &ARM7TDMI::it_eor }, 
-            { 0b0010, &ARM7TDMI::it_lsl }, 
-            { 0b0011, &ARM7TDMI::it_lsr }, 
-            { 0b0100, &ARM7TDMI::it_asr }, 
-            { 0b0101, &ARM7TDMI::it_adc }, 
-            { 0b0110, &ARM7TDMI::it_sbc }, 
-            { 0b0111, &ARM7TDMI::it_ror }, 
-            { 0b1000, &ARM7TDMI::it_tst }, 
-            { 0b1001, &ARM7TDMI::it_neg }, 
-            { 0b1010, &ARM7TDMI::it_cmp }, 
-            { 0b1011, &ARM7TDMI::it_cmn }, 
-            { 0b1100, &ARM7TDMI::it_orr }, 
-            { 0b1101, &ARM7TDMI::it_mul }, 
-            { 0b1110, &ARM7TDMI::it_bic }, 
-            { 0b1111, &ARM7TDMI::it_mvn }, 
-        };
+			case 0b0000: rd = rd & rs;                            break;       //AND
+			case 0b0001: rd = rd ^ rs;                            break;       //EOR
+			case 0b0010: std::tie(rd, carry) = shift_carry(rd, CPU::ShiftType::LSL, rs, carry); break; //LSL
+			case 0b0011: std::tie(rd, carry) = shift_carry(rd, CPU::ShiftType::LSR, rs, carry); break; //LSR
+            case 0b0100: std::tie(rd, carry) = shift_carry(rd, CPU::ShiftType::ASR, rs, carry); break; //ASR
+			case 0b0101: rd = rd + rs + carry;                    break;       //ADC
+			case 0b0110: rd = rd - rs - !carry;                   break;       //SBC
+			case 0b0111: std::tie(rd, carry) = shift_carry(rd, CPU::ShiftType::ROR, rs, carry); break; //ROR
+			case 0b1000: result = rd & rs;                        break;       //TST
+			case 0b1001: rd = rs * -1;                            break;       //NEG
+			case 0b1010: result = rd -rs;                         break;       //CMP
+			case 0b1011: result = rd + rs;                        break;       //CMN
+			case 0b1100: rd = rd | rs;                            break;       //ORR
+			case 0b1101: rd = rd * rs;                            break;       //MUL
+			case 0b1110: rd = rd & (~rs);                         break;       //BIC
+			case 0b1111: rd = ~rs;                                break;       //MVN
+
+			default:                                              throw std::runtime_error("Invalid opcode");
+        }
+
+		if (opcode != 0b1000 && opcode != 0b1010 && opcode != 0b1011) result = rd; //Set the cpsr flags based on the result
+
+
+
+		cpsr.set_flag(PSR::Flag::Negative, result[31]);
+		cpsr.set_flag(PSR::Flag::Zero,     result == 0);
+		cpsr.set_flag(PSR::Flag::Carry,    carry);
+
+        //TODO: ...?
+		//const auto signRn = get_bit(rn, 31);               //Check for overflow by comparing the sign of the operands
+		//const auto signOp2 = get_bit(op2, 31);               //If the signs are the same, but the result has a different sign, overflow has occurred
+		//const auto signResult = get_bit(result, 31);               //(i.e. the sign of the result is different from the signs of the operands)
+
+		//const auto v = ((signRn == signOp2) && (signResult != signRn));
+		//cpsr = set_bit<dword>(cpsr, PSR::Flag::Overflow, v);
+    }
+    void ARM7TDMI::hi_register_operations__branch_exchange(const Instruction<word>& instruction)
+    {
+		const auto rdIndex = get_bits(instruction, 0, 3);
+		const auto rsIndex = get_bits(instruction, 3, 3);
+		const auto opcode  = get_bits(instruction, 8, 2);
+        const auto h1Flag  = get_bit (instruction, 7);                         //Registers 0-7
+        const auto h2Flag  = get_bit (instruction, 6);                         //Registers 8-15
+
+		auto& rd = m_registers[rdIndex | (h1Flag << 3)];                       //The H flag selects the high or low registers
+		dword rs = m_registers[rsIndex | (h2Flag << 3)];                       //If it is set, the register index is offset by 8
+        Register<dword> result{};
+
+        auto& cpsr = m_registers.get_cpsr();
 
 
 		
-		const auto func = opcodeToFunction.at(opcode);
-		Register<dword> result{};                                              //Store the result in a placeholder value => not all operations may write back to the destination register
+        if (rsIndex == 15)
+        {
+            rs &= ~0x1;                                                        //2 byte alignment
+            rs += 4;                                                           //TODO: correct? prefetch adjusted operand
+        }
 
-		const auto isTest = (opcode > 0b0111 && opcode < 0b1100);
+		
 
-		if (isTest)
-		{
-            std::invoke(func, this, result, rs);
-		}
-		else
-		{
-			std::invoke(func, this, rd, rs);
-			result = rd;
-		}
-    }
+        switch (opcode)
+        {
+            case 0b00: rd = rd + rs; break;                                    //ADD
+            case 0b01:                                                         //CMP
+            {
+                result = rd - rs; 
 
-    void ARM7TDMI::it_and(Register<dword>& rd, dword rs)
-    {
-		rd = rd & rs;
+				cpsr.set_flag(PSR::Flag::Negative, result[31]);
+				cpsr.set_flag(PSR::Flag::Zero,     result == 0);
+
+                break;
+            }
+            case 0b10: rd = rs; break;                                         //MOV
+			case 0b11:                                                         //BX
+			{
+                const auto tFlag = get_bit(rs, 0);
+
+                if (tFlag)
+                {
+                    m_registers.pc = rs & ~0x1;
+                    m_pipelineTHUMB.flush();
+                }
+                else
+                {
+                    m_registers.pc = rs & ~0x3;
+                    m_pipelineARM.flush();
+                }
+
+				cpsr.set_flag(PSR::Flag::Thumb, tFlag);
+
+				break;
+			}
+        }
     }
-    void ARM7TDMI::it_eor(Register<dword>& rd, dword rs)
+    void ARM7TDMI::pc_relative_load(const Instruction<word>& instruction)
     {
-		rd = rd ^ rs;
+        const auto rdIndex = get_bits(instruction, 8, 3);
+        const auto word8   = get_bits(instruction, 0, 8);
+
+        auto& rd = m_registers[rdIndex];
+        dword address{};
+
+
+
+        address  = m_registers.pc & ~0x2;                                      //Bit 1 of the PC is forced to 0 to ensure it is word aligned
+        address += word8 << 2;
+
+        rd = m_BUS->read<word>(address);
     }
-    void ARM7TDMI::it_lsl(Register<dword>& rd, dword rs)
+    void ARM7TDMI::load_store_register_offset(const Instruction<word>& instruction)
     {
-		rd = rd << rs;
+        const auto rdIndex = get_bits(instruction,  0, 3);
+        const auto rbIndex = get_bits(instruction,  3, 3);
+        const auto roIndex = get_bits(instruction,  6, 3);
+        const auto bFlag   = get_bit (instruction, 10);
+        const auto lFlag   = get_bit (instruction, 11);
+
+        auto& rd = m_registers[rdIndex];
+        dword rb = m_registers[rbIndex];
+        dword ro = m_registers[roIndex];
+        dword address = rb + ro;
+
+        
+
+        const auto opcode = (lFlag << 1) | static_cast<int>(bFlag);
+
+        switch (opcode)
+        {
+            case 0b00: m_BUS->write<word>(address, rd); break;
+            case 0b01: m_BUS->write<byte>(address, rd); break;
+            case 0b10: rd = m_BUS->read<word>(address); break; //TODO: halfword rotate as usual
+            case 0b11: rd = m_BUS->read<byte>(address); break;
+        }
     }
-    void ARM7TDMI::it_lsr(Register<dword>& rd, dword rs)
+    void ARM7TDMI::load_store_sign_extended(const Instruction<word>& instruction)
     {
-        rd = rd >> rs;
+        const auto rdIndex = get_bits(instruction,  0, 3);
+        const auto rbIndex = get_bits(instruction,  3, 3);
+        const auto roIndex = get_bits(instruction,  6, 3);
+        const auto hFlag   = get_bit (instruction, 11);
+        const auto sFlag   = get_bit (instruction, 11);
+
+        auto& rd = m_registers[rdIndex];
+        dword rb = m_registers[rbIndex];
+        dword ro = m_registers[roIndex];
+        dword address = rb + ro;
+
+
+
+        const auto opcode = (hFlag << 1) | static_cast<int>(sFlag);
+
+        switch (opcode)
+        {
+            case 0b00: m_BUS->write<word>(address, rd);                       break;
+            case 0b01: rd = m_BUS->read<word>(address);                       break; //Bits [16:31] are automatically set to 0
+            case 0b10: rd = sign_extend<int, 7> (m_BUS->read<byte>(address)); break;
+            case 0b11: rd = sign_extend<int, 15>(m_BUS->read<word>(address)); break;
+        }
     }
-    void ARM7TDMI::it_asr(Register<dword>& rd, dword rs)
+    void ARM7TDMI::load_store_immediate_offet(const Instruction<word>& instruction)
     {
-        rs = shift(rd, CPU::ShiftType::ASR, rs);
+        const auto rdIndex = get_bits(instruction,  0, 3);
+        const auto rbIndex = get_bits(instruction,  3, 3);
+        const auto offset5 = get_bits(instruction,  6, 5);
+        const auto bFlag   = get_bit (instruction, 12);
+        const auto lFlag   = get_bit (instruction, 12);
+
+        auto& rd = m_registers[rdIndex];
+        dword rb = m_registers[rbIndex];
+        dword address{};
+
+
+
+        if (bFlag) address = rb + offset5;
+        else       address = rb + (offset5 << 2);
+
+        const auto opcode = (bFlag << 1) | static_cast<int>(lFlag);
+
+        switch (opcode)
+        {
+            case 0b00: m_BUS->write<word>(address, rd); break;
+            case 0b01: m_BUS->write<byte>(address, rd); break;
+            case 0b10: rd = m_BUS->read<word>(address); break;                   //TODO: READ WORD ROTATE 
+            case 0b11: rd = m_BUS->read<byte>(address); break;
+        }
     }
-    void ARM7TDMI::it_adc(Register<dword>& rd, dword rs)
+    void ARM7TDMI::load_store_halfword(const Instruction<word>& instruction)
     {
+		const auto rdIndex = get_bits(instruction,  0, 3);
+		const auto rbIndex = get_bits(instruction,  3, 3);
+		const auto offset5 = get_bits(instruction,  6, 5);
+		const auto lFlag   = get_bit (instruction, 11);
+
+        auto& rd = m_registers[rdIndex];
+        dword rb = m_registers[rbIndex];
+        dword address = rb + (offset5 << 1);
+
+
+
+        if (lFlag) rd = m_BUS->read<word>(address);                              //TODO: rotate
+        else       m_BUS->write<word>(address, rd);
+    }
+    void ARM7TDMI::sp_relative_load_store(const Instruction<word>& instruction)
+    {
+        const auto rdIndex = get_bits(instruction, 8, 3);
+        const auto word8   = get_bits(instruction, 0, 8);
+        const auto lFlag   = get_bit (instruction, 11);
+
+        auto& rd = m_registers[rdIndex];
+        dword address = m_registers.sr + (word8 << 2);
+
+
+
+        if (lFlag) rd = m_BUS->read<word>(address);                              //TODO: rotate
+        else       m_BUS->write<word>(address, rd);
+    }
+    void ARM7TDMI::load_address(const Instruction<word>& instruction)
+    {
+        const auto rdIndex = get_bits(instruction, 8, 3);
+        const auto word8   = get_bits(instruction, 0, 8);
+        const auto sFlag   = get_bit(instruction, 11);
+
+        auto& rd = m_registers[rdIndex];
+        dword offset = word8 << 2;
+
+
+
+        if (sFlag) rd = m_registers.sr + offset;
+        else       rd = (m_registers.pc & ~0x2) + offset;
+    }
+    void ARM7TDMI::add_offset_stack_pointer(const Instruction<word>& instruction)
+    {
+        const auto sword7 = get_bits(instruction, 0, 7);
+        const auto sFlag  = get_bit (instruction, 7);
+
+        dword offset = sword7 << 2;
+
+
+
+        if (sFlag) m_registers.sr += offset;
+        else       m_registers.sr -= offset;
+    }
+    void ARM7TDMI::push_pop_registers(const Instruction<word>& instruction)
+    {
+        const auto registerList = get_bits(instruction,  0, 8);
+        const auto lFlag        = get_bit (instruction, 11);
+        const auto rFlag        = get_bit (instruction,  8);
+
+        dword address = m_registers.sr.get();
+
+
+		
+        if (registerList == 0 && !rFlag)                                       //Empty list special case
+        {
+            if (lFlag)
+            {
+                m_registers.pc = m_BUS->read<word>(address);
+                m_registers.sr += 0x40;
+                
+                m_pipelineTHUMB.flush();
+            }
+            else
+            {
+                m_registers.sr -= 0x40;
+				m_BUS->write<word>(address, m_registers.pc.get());
+            }
+
+            return;
+        }
+
+		
+		
+        const auto listSize = 8;
+
+        if (lFlag)
+        {
+            for (int i = 0; i < listSize; ++i)
+            {
+                if (registerList & (0x1 << i))
+                {
+					m_registers[i] = m_BUS->read<word>(address);
+					address += 4;
+                }
+            }
+
+            if (rFlag)
+            {
+                m_registers.pc = m_BUS->read<word>(address) & ~0x1;
+                address += 4;
+				
+                m_pipelineTHUMB.flush();
+            }
+			
+            m_registers.sr = address;
+        }
+        else
+        {
+			for (int i = 0; i < listSize; ++i)
+			{
+                if (registerList & (0x1 << i)) address -= 4;
+			}
+
+            if (rFlag) address -= 4;
+            m_registers.sr = address;
+
+			
+			
+			for (int i = 0; i < listSize; ++i)
+			{
+                if (registerList & (0x1 << i))
+                {
+                    m_BUS->write<word>(address, m_registers[i]);
+                    address += 4;
+                }
+			}
+
+			if (rFlag) m_BUS->write<word>(address, m_registers.lr.get());
+        }
+    }
+    void ARM7TDMI::multiple_load_store(const Instruction<word>& instruction)
+    {
+		const auto rbIndex      = get_bits(instruction,  8, 3);
+		const auto registerList = get_bits(instruction,  0, 8);
+        const auto lFlag        = get_bit (instruction, 11);
+
+        auto& rb = m_registers[rbIndex];
+        dword address = rb;
+		
+
+
+        if (registerList == 0)
+        {
+            if (lFlag)
+            {
+				m_registers.pc = m_BUS->read<word>(address);
+				
+                m_pipelineTHUMB.flush();
+            }
+            else
+            {
+                m_BUS->write<word>(address, m_registers.pc.get());
+            }
+
+            rb += 0x40;
+			
+            return;
+        }
+
+
+		
+        const auto listSize = 8;
+		
+        if (lFlag)
+        {
+            for (int i = 0; i < listSize; ++i)
+            {
+                if (registerList & (0x1 << i))
+                {
+					m_registers[i] = m_BUS->read<word>(address);
+                    address += 4;
+                }
+            }
+
+            if (~registerList & (0x1 << rbIndex)) rb = address;                //TODO: const auto writeback = get_bit etc. then if (...) rb = address;
+        }
+        else 
+        {
+            auto count = 0;
+            auto first = 0;
+
+            for (int i = listSize - 1; i >= 0; --i)
+            {
+				if (registerList & (0x1 << i))
+				{
+					++count;
+					first = i;
+				}
+            }
+
+
+
+            dword offset = address + (count * 4);
+
+            m_BUS->write<word>(address, m_registers[first]);
+            rb = offset;
+            address += 4;
+			
+            for (int i = first + 1; i <= listSize - 1; ++i)                    //Im going to be honest, I have no idea what's happening anymore at this point
+            {
+                if (registerList & (0x1 << i))                                 //Also big TODO: refactor this instead of flat out copying nba github
+                {
+					m_BUS->write<word>(address, m_registers[i]);
+					address += 4;
+                }
+            }
+        }
+    }
+    void ARM7TDMI::conditional_branch(const Instruction<word>& instruction)
+    {
+        const auto soffset8 = get_bits(instruction, 0, 8);
+        const auto cond     = get_bits(instruction, 8, 4);
+
+        dword offset = sign_extend<int, 7>(soffset8) << 1;
         const auto& cpsr = m_registers.get_cpsr();
-        const auto carry = cpsr.flag(PSR::Flag::Carry);
 
-		rd = rd + rs + carry;
-    }
-    void ARM7TDMI::it_sbc(Register<dword>& rd, dword rs)
-    {
-		const auto& cpsr = m_registers.get_cpsr();
-		const auto carry = cpsr.flag(PSR::Flag::Carry);
 
-		rd = rd - rs - !carry;
+
+		if (!check_condition(instruction << 20, cpsr)) return;                 //The condition in this instruction is at bits [8:11] => shift to bit 31
+
+        m_registers.pc += offset;
+        m_pipelineTHUMB.flush();
     }
-    void ARM7TDMI::it_ror(Register<dword>& rd, dword rs)
+    void ARM7TDMI::software_interrupt(const Instruction<word>& instruction)
     {
-		rs = shift(rd, CPU::ShiftType::ROR, rs);
+        auto& cpsr = m_registers.get_cpsr();
+        auto& spsr = m_registers.get_spsr(OperatingMode::SVC);
+
+        spsr = cpsr;
+		
+        switch_mode(OperatingMode::SVC);
+        cpsr.set_flag(PSR::Flag::IRQ, true);
+        cpsr.set_flag(PSR::Flag::Thumb, false);
+
+		m_registers.lr = m_registers.pc - 2;
+		m_registers.pc = 0x8;
+
+		m_pipelineTHUMB.flush();
     }
-    void ARM7TDMI::it_tst(Register<dword>& rd, dword rs)
+    void ARM7TDMI::unconditional_branch(const Instruction<word>& instruction)
     {
-        rd = rd & rs;
+        const auto offset11 = get_bits(instruction, 0, 11);
+
+        dword offset = sign_extend<int, 10>(offset11) << 1;
+
+
+
+        m_registers.pc += offset;
+        m_pipelineTHUMB.flush();
     }
-    void ARM7TDMI::it_neg(Register<dword>& rd, dword rs)
+    void ARM7TDMI::long_branch_link(const Instruction<word>& instruction)
     {
-        rs = -rs;
-    }
-    void ARM7TDMI::it_cmp(Register<dword>& rd, dword rs)
-    {
-        rd = rd - rs;
-    }
-    void ARM7TDMI::it_cmn(Register<dword>& rd, dword rs)
-    {
-        rd = rd + rs;
-    }
-    void ARM7TDMI::it_orr(Register<dword>& rd, dword rs)
-    {
-		rd = rd | rs;
-    }
-    void ARM7TDMI::it_mul(Register<dword>& rd, dword rs)
-    {
-        rd = rd * rs;
-    }
-    void ARM7TDMI::it_bic(Register<dword>& rd, dword rs)
-    {
-		rd = rd & ~rs;
-    }
-    void ARM7TDMI::it_mvn(Register<dword>& rd, dword rs)
-    {
-        rd = ~rs;
+        const auto offset11 = get_bits(instruction,  0, 11);
+        const auto hFlag    = get_bit (instruction, 11);
+
+        dword offset{};
+
+
+
+        if (hFlag)
+        {
+            const auto nextInstruction = m_registers.pc - 2;
+            offset = (offset11 << 1);
+			
+            m_registers.pc = (m_registers.lr + offset) & ~0x1;
+            m_registers.lr = nextInstruction | 0x1;
+        }
+        else
+        {
+            offset = sign_extend<int, 22>(offset11 << 12);                     //Offset MSB is at index 10, ls 12 => 22;
+            m_registers.lr = m_registers.pc + offset;
+        }
     }
 }

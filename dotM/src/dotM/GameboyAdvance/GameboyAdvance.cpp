@@ -1,6 +1,7 @@
 #include <stdafx.hpp>
 
 #include "GameboyAdvance.hpp"
+#include "dotM/Library/File.hpp"
 
 namespace dot::gba
 {
@@ -17,8 +18,7 @@ namespace dot::gba
 
 
 		
-		m_CPU->bus = m_BUS;
-
+		m_CPU->connect(m_BUS);
 		m_BUS->connect(m_BIOS);
 		m_BUS->connect(m_IWRAM);
 		m_BUS->connect(m_EWRAM);

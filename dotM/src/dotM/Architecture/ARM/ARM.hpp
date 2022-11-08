@@ -5,7 +5,6 @@
 namespace dot::architecture
 {
 	constexpr unsigned int ARM_FORMAT_COUNT = 15;
-	constexpr unsigned int THUMB_FORMAT_COUNT = 19;
 
 	const std::array<unsigned int, ARM_FORMAT_COUNT> ARM_INSTRUCTION_FORMAT
 	{

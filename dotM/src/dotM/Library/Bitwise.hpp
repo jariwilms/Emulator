@@ -1,23 +1,23 @@
 #pragma once
 
 template<typename T>
-constexpr bit get_bit(const T& value, unsigned int position)
+constexpr bit get_bit(const T& value, unsigned int index)
 {
-	return (value >> position) & 0x1;
+	return (value >> index) & 0x1;
 }
-template<typename T>
-constexpr unsigned long long get_bits(const T& value, unsigned int position, unsigned int count)
+template<typename T, typename U>
+constexpr U get_bits(const T& value, U index, U count)
 {
-	return (value >> position) & ((1ul << count) - 1);
+	return (value >> index) & ((1ul << count) - 1);
 }
 
 template<typename T>
-constexpr T set_bit(const T& value, unsigned int position, bool state)
+constexpr T set_bit(const T& value, unsigned int index, bool state)
 {
-	return value ^ (!state ^ value) & (1ul << position);
+	return value ^ (-static_cast<int>(state) ^ value) & (1ul << index);
 }
 template<typename T, typename U>
-constexpr T set_bits(const T& value, unsigned int position, unsigned int count, const U& bits) //not tested
+constexpr T set_bits(const T& value, unsigned int index, unsigned int count, const U& bits)
 {
-	return (value & ~(((1ul << count) - 1) << position)) | (bits << position);
+	return (value & ~(((1ul << count) - 1) << index)) | (bits << index);
 }

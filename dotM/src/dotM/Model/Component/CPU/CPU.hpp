@@ -12,13 +12,14 @@ namespace dot
 		
 		enum class ShiftType
 		{
-			LSL = 0b00, //Logical Shift Left
-			LSR = 0b01, //Logical Shift Right
-			ASR = 0b10, //Arithmetic Shift Right
-			ROR = 0b11, //Rotate Right
+			LSL = 0b00,                                                        //Logical Shift Left
+			LSR = 0b01,                                                        //Logical Shift Right
+			ASR = 0b10,                                                        //Arithmetic Shift Right
+			ROR = 0b11,                                                        //Rotate Right
 		};
+		
 		template<typename T, typename U>
-		T shift(T value, ShiftType type, U bits)
+		static constexpr T shift(T value, ShiftType type, U bits)
 		{
 			static_assert(std::is_integral<T>::value, "T must be an integral type");
 			static_assert(std::is_integral<U>::value, "U must be an integral type");
@@ -39,7 +40,7 @@ namespace dot
 		}
 
 		template <typename T, size_t MSB>
-		inline T sign_extend(const T& value)
+		static constexpr T sign_extend(const T& value)
 		{
 			struct extend{ T v : MSB; };                                       //The compiler extends the value for us
 			

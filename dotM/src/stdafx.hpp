@@ -12,14 +12,12 @@
 #include <list>
 #include <map>
 #include <unordered_map>
-#include <bitset>
-
-#include <unordered_map>
 #include <unordered_set>
+#include <bitset>
 
 #include <algorithm>
 #include <functional>
-#include <filesystem>
+#include <optional>
 
 #include <memory>
 #include <chrono>
@@ -27,9 +25,10 @@
 
 #include <limits>
 #include <climits>
+#include <cstring>
 
-#include <cassert>
-
-
+#include <filesystem>
 
 #include "dotM/Format/Type.hpp"
+#include "dotM/Library/Bitwise.hpp"
+

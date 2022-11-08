@@ -4,47 +4,45 @@
 
 namespace dot::gba
 {
-	class MEMORY
+	class MEMORY //TODO: template access specification? read/write throws exception if not allowed?
 	{
 	public:
-		enum class Access
-		{
-			Read,
-			Write,
-			Read_Write,
-		};
+        enum class Access
+        {
+            Read,
+            Write,
+            Read_Write,
+        };
 
-		MEMORY(Access type, size_t addr0, size_t addrf)
-			: m_access{ type }, m_range{ addr0, addrf }, m_memory{ std::make_unique<byte[]>((addrf - addr0) + 1) }
-		{
-			
-		}
+        MEMORY(Access access, size_t addr0, size_t addrf)
+            : m_memory{ std::make_unique<byte[]>((addrf - addr0) + 1) }, m_range{ addr0, addrf } {}
 		virtual ~MEMORY() = default;
 
 
-
+		
 		template<typename T>
 		T read(size_t address) const
 		{
-			if (m_access == Access::Write) return {};
-
-			address = map_physical(address);
-
 			T value{};
-			std::memcpy(&value, m_memory.get() + address, sizeof(T));
+			
+			const auto offset = map_physical(address);
+			std::memcpy(&value, m_memory.get() + offset, sizeof(T));
 
 			return value;
 		}
 		template<typename T>
 		void write(size_t address, T data) const
 		{
-			if (m_access == Access::Read) return;
-
-			address = map_physical(address);
-
-			std::memcpy(m_memory.get() + address, &data, sizeof(T));
+			const auto offset = map_physical(address);
+			std::memcpy(m_memory.get() + offset, &data, sizeof(T));
 		}
 
+		const byte* get(size_t address)
+		{
+			const auto offset = map_physical(address);
+			
+			return m_memory.get() + offset;
+		}
 		template<typename T>
 		void set(size_t address, const T* data, size_t size) const
 		{
@@ -54,30 +52,26 @@ namespace dot::gba
 			std::memcpy(m_memory.get() + address, data, size);
 		}
 
-		inline size_t size() const                                             //Returns the size of the memory in bytes
+		size_t size() const                                             //Returns the size of the memory in bytes
 		{
 			const auto& [addr0, addrF] = m_range;
 			
 			return (addrF - addr0) + 1;
 		}
-		inline std::pair<size_t, size_t> range() const
+		std::pair<size_t, size_t> range() const
 		{
 			return m_range;
 		}
-		inline Access access() const
-		{
-			return m_access;
-		}
 
-		inline bool in_bounds(size_t address) const
+		bool in_bounds(size_t address) const
 		{
 			const auto& [addr0, addrF] = m_range;
 			
 			return address >= addr0 && address <= addrF;
 		}
-		
+
 	protected:
-		inline size_t map_physical(size_t address) const
+		size_t map_physical(size_t address) const
 		{
 			if (!in_bounds(address)) throw std::invalid_argument("Address out of range!");
 			
@@ -86,8 +80,6 @@ namespace dot::gba
 		
 	private:
 		std::unique_ptr<byte[]> m_memory{};
-		std::pair<size_t, size_t> m_range{};                                   //Holds the start and end range of addressable memory
-
-		Access m_access{};                                                     //Specifies which operations are allowed
+		std::pair<size_t, size_t> m_range{};
 	};
 }

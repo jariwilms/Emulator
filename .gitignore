@@ -40,3 +40,5 @@
 /bin_obj/Debug/windows
 /bin/Release/windows/dotM
 /bin_obj/Release/windows/dotM
+/bin
+/bin_obj

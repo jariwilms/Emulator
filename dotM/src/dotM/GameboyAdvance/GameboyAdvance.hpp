@@ -3,7 +3,6 @@
 #include <stdafx.hpp>
 
 #include "dotM/GameboyAdvance/Specification/GBA.hpp"
-#include "dotM/Library/File.hpp"
 
 namespace dot::gba
 {
@@ -40,7 +39,7 @@ namespace dot::gba
 			m_running = false;
 		}
 
-	//private:
+    private:
 		void boot();
 		void run();
 
