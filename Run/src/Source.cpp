@@ -5,8 +5,8 @@
 
 int main(int argc, char** argv)
 {
-	dot::gba::GameboyAdvance gba{};
-	gba.on();
+	dot::gba::GameboyAdvance gameboy{};
+	gameboy.on();
 
 
 
