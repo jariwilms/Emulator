@@ -23,6 +23,7 @@
     <IgnoreWarnCompileDuplicatedFilename>true</IgnoreWarnCompileDuplicatedFilename>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>dotM</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -98,7 +99,7 @@
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -133,7 +134,7 @@
       <MinimalRebuild>false</MinimalRebuild>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -163,8 +164,17 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="src\dotM\Architecture\ARM\ARM.hpp" />
-    <ClInclude Include="src\dotM\Architecture\THUMB\THUMB.hpp" />
-    <ClInclude Include="src\dotM\Format\Type.hpp" />
+    <ClInclude Include="src\dotM\Architecture\EXCEPT\VECTOR.hpp" />
+    <ClInclude Include="src\dotM\Architecture\LUT\ARM.hpp" />
+    <ClInclude Include="src\dotM\Architecture\LUT\LUT_THUMB.hpp" />
+    <ClInclude Include="src\dotM\Architecture\LUT\THUMB.hpp" />
+    <ClInclude Include="src\dotM\Architecture\FORMAT\Type.hpp" />
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\DMA\DMAController.hpp" />
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\DMA\DMAChannel.hpp" />
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\INPUT\KeyController.hpp" />
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\INTERRUPT\IPeripheral.hpp" />
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\TIMER\Timer.hpp" />
+    <ClInclude Include="src\dotM\GameboyAdvance\Specification\TIMING.hpp" />
     <ClInclude Include="src\dotM\Gameboy\Component\CPU\CPU.hpp" />
     <ClInclude Include="src\dotM\Gameboy\Component\CPU\LR35902\LR35902.hpp" />
     <ClInclude Include="src\dotM\Gameboy\Specification\GB.hpp" />
@@ -175,17 +185,19 @@
     <ClInclude Include="src\dotM\GameboyAdvance\Component\MEM\ROM.hpp" />
     <ClInclude Include="src\dotM\GameboyAdvance\Component\MEM\WOM.hpp" />
     <ClInclude Include="src\dotM\GameboyAdvance\Component\PPU\PPU.hpp" />
-    <ClInclude Include="src\dotM\GameboyAdvance\Component\SCREEN\AGS101.hpp" />
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\DISPLAY\DISPLAY.hpp" />
     <ClInclude Include="src\dotM\GameboyAdvance\GameboyAdvance.hpp" />
     <ClInclude Include="src\dotM\GameboyAdvance\Specification\GBA.hpp" />
-    <ClInclude Include="src\dotM\GameboyAdvance\Specification\MEMORY_MAP.hpp" />
+    <ClInclude Include="src\dotM\Architecture\MEMORY\MAP.hpp" />
     <ClInclude Include="src\dotM\Library\Bitwise.hpp" />
     <ClInclude Include="src\dotM\Library\File.hpp" />
     <ClInclude Include="src\dotM\Model\Component\CPU\CPU.hpp" />
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\BUS\IConnectable.hpp" />
     <ClInclude Include="src\stdafx.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\dotM\GameboyAdvance\Component\CPU\ARM7TDMI.cpp" />
+    <ClCompile Include="src\dotM\GameboyAdvance\Component\DMA\DMAController.cpp" />
     <ClCompile Include="src\dotM\GameboyAdvance\GameboyAdvance.cpp" />
     <ClCompile Include="src\dotM\Library\File.cpp" />
     <ClCompile Include="src\stdafx.cpp">

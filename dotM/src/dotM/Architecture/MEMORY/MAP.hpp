@@ -1,8 +1,7 @@
 #pragma once
 
-namespace dot::gba
+namespace dot::arc
 {
-	//Memory-Mapped Hardware Registers
     constexpr auto BIT00 = (0x1 <<  0);
     constexpr auto BIT01 = (0x1 <<  1);
     constexpr auto BIT02 = (0x1 <<  2);
@@ -20,7 +19,6 @@ namespace dot::gba
     constexpr auto BIT14 = (0x1 << 14);
     constexpr auto BIT15 = (0x1 << 15);
 
-    //Joystick Keys
     constexpr auto BUTTON_A             = 0x0001;                              //A Button
     constexpr auto BUTTON_B             = 0x0002;                              //B Button
     constexpr auto BUTTON_SELECT        = 0x0004;                              //SELECT Button
@@ -39,7 +37,6 @@ namespace dot::gba
     constexpr auto TMR_IF_ENABLE        = 0x0040;                              //Interrupt Request Enable
     constexpr auto TMR_ENABLE           = 0x0080;                              //Run Timer
 
-    //Interrupts
     constexpr auto INT_VBLANK        = 0x0001;
     constexpr auto INT_HBLANK        = 0x0002;
     constexpr auto INT_VCOUNT        = 0x0004;                                 //Generate Interrupt on V-Counter Match
@@ -56,7 +53,6 @@ namespace dot::gba
     constexpr auto INT_CART          = 0x2000;                                 //Card Interrupt
     constexpr auto INT_ALL           = 0x4000;                                 //Any Interrupt
 
-    //Sound Channels
     constexpr auto SOUNDINIT      = 0x8000;                                    //Restart Sound
 	constexpr auto SOUNDDUTY87    = 0x0000;                                    //87.5% Wave Duty Cycle
 	constexpr auto SOUNDDUTY75    = 0x0040;                                    //75%   Wave Duty Cycle
@@ -109,7 +105,6 @@ namespace dot::gba
     constexpr auto SOUND4STEPS7   = 0x0004;
     constexpr auto SOUND4STEPS15  = 0x0000;
 
-    //Registers
     constexpr auto REG_INTERUPT    = 0x03007FFC;                               //Interrupt Register
     constexpr auto REG_DISPCNT     = 0x04000000;                               //Display Control (Mode)
     constexpr auto REG_DISPCNT_L   = 0x04000000;                               //???
@@ -294,4 +289,5 @@ namespace dot::gba
     constexpr auto REG_WSCNT       = 0x04000204;                               //???
     constexpr auto REG_IME         = 0x04000208;                               //Interrupt Master Enable
     constexpr auto REG_PAUSE       = 0x04000300;                               //Pause
+#pragma endregion IO Registers
 }

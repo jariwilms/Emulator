@@ -13,55 +13,65 @@ namespace dot::gba
 		BUS() = default;
 		virtual ~BUS() = default;
 
+		
+
 		template<typename T>
 		T read(size_t address)
 		{
-			if (!validate<T>(address)) return {};
+			validate<T>();
 
-			return m_selectedMemory->read<T>(address);
+			const auto memory = match_memory(address);
+			return memory.expired() ? T{} : memory.lock()->read<T>(address);
 		}
 		template<typename T>
-		void write(size_t address, T data)
+		void write(size_t address, T value)
 		{
-			if (!validate<T>(address)) return;
-
-			m_selectedMemory->write<T>(address, data);
+			validate<T>();
+			
+			const auto memory = match_memory(address);
+			if (!memory.expired()) memory.lock()->write<T>(address, value);
 		}
 
-		inline void connect(std::shared_ptr<MEMORY> memory)
+		template<typename T>
+		void transfer(size_t srcAddress, size_t dstAddress, size_t size)
+		{
+			const auto src = match_memory(srcAddress);
+			const auto dst = match_memory(dstAddress);
+
+			if (src.expired() || dst.expired()) return;
+
+
+
+			const auto srcMemory = src.lock();
+			const auto dstMemory = dst.lock();
+			
+			std::memcpy(srcMemory->get<T>() + srcAddress, dstMemory->data<T>() + dstAddress, size);
+		}
+
+		void connect(std::shared_ptr<MEMORY> memory)
 		{
 			m_memory.emplace_back(memory);
 		}
 
 	protected:
 		template<typename T>
-		inline bool validate(size_t address)                                   //Check if the given type and address are valid
+		constexpr void validate()
 		{
-			auto size = sizeof(T) * 8;
-			auto memory = map_memory(address);
-
-			if (memory.has_value() && (size <= m_width))
-			{
-				m_selectedMemory = memory.value();
-				
-				return true;
-			}
-
-			return false;
+			constexpr auto size = sizeof(T) * 8;
+			static_assert(size <= WIDTH, "Type size exceeds bus width!");
 		}
-
-		std::optional<std::shared_ptr<MEMORY>> map_memory(size_t address) const
+		std::weak_ptr<MEMORY> match_memory(size_t address)
 		{
 			for (const auto& memory : m_memory)
 			{
-				const auto& [addr0, addrF] = memory->range();
-				
-				if (memory->in_bounds(address)) return memory;
+				if (memory->contains(address)) return memory;
 			}
-
+			
 			return {};
 		}
+		
 
+		
 		std::vector<std::shared_ptr<MEMORY>> m_memory{};
 		std::shared_ptr<MEMORY> m_selectedMemory{};
 		size_t m_address{};

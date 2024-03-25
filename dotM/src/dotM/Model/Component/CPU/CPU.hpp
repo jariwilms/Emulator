@@ -17,7 +17,6 @@ namespace dot
 			ASR = 0b10,                                                        //Arithmetic Shift Right
 			ROR = 0b11,                                                        //Rotate Right
 		};
-		
 		template<typename T, typename U>
 		static constexpr T shift(T value, ShiftType type, U bits)
 		{
@@ -38,22 +37,38 @@ namespace dot
 				default:             throw std::runtime_error("Invalid ShiftType");
 			}
 		}
-
 		template <typename T, size_t MSB>
 		static constexpr T sign_extend(const T& value)
 		{
-			struct extend{ T v : MSB; };                                       //The compiler extends the value for us
+			struct extend{ T v : MSB; };                                       //We let the compiler do our job
 			
 			return extend{ value }.v;
 		}
+		template<typename T>
+		static constexpr T reverse(const T& value)
+		{
+			static_assert(std::is_integral<T>::value, "T must be an integral type");
 
+			T result{};
+			const int size = sizeof(T) * 8;
+			
+			for (auto i = 0; i < size; ++i)
+			{
+				result |= get_bit(value, i) << (size - i - 1);
+			}
+			
+			return result;
+		}
 
-		
 		template<typename T>
 		struct Register
 		{
 		public:
 			Register() = default;
+			explicit Register(const T& value)
+			{
+				m_value = value;
+			}
 			virtual ~Register() = default;
 
 			operator T() const
@@ -86,118 +101,6 @@ namespace dot
 		protected:
 			T m_value{};
 		};
-		template<typename T>
-		struct RegisterReference
-		{
-		public:
-			RegisterReference(Register<T>& reg)
-				: m_register{ &reg } {}
-			~RegisterReference() = default;
-
-			inline Register<T>& get() const
-			{
-				return *m_register;
-			}
-
-			operator Register<T>() const
-			{
-				return *m_register;
-			}
-			operator Register<T>& ()
-			{
-				return *m_register;
-			}
-
-			void operator=(Register<T>& other)
-			{
-				m_register = &other;
-			}
-
-			template<typename U>
-			void operator=(const U& other)
-			{
-				*m_register = other;
-			}
-
-			template<typename U>
-			Register<T> operator+(const U& other)
-			{
-				auto result = *m_register;
-				result += other;
-
-				return result;
-			}
-			template<typename U>
-			Register<T> operator-(const U& other)
-			{
-				auto result = *m_register;
-				result -= other;
-
-				return result;
-			}
-			template<typename U>
-			Register<T> operator*(const U& other)
-			{
-				auto result = *m_register;
-				result *= other;
-
-				return result;
-			}
-			template<typename U>
-			Register<T> operator/(const U& other)
-			{
-				auto result = *m_register;
-				result /= other;
-
-				return result;
-			}
-			template<typename U>
-			Register<T> operator%(const U& other)
-			{
-				auto result = *m_register;
-				result %= other;
-
-				return result;
-			}
-
-			template<typename U>
-			Register<T> operator&(const U& other)
-			{
-				auto result = *m_register;
-				result &= other;
-
-				return result;
-			}
-			template<typename U>
-			Register<T> operator|(const U& other)
-			{
-				auto result = *m_register;
-				result |= other;
-
-				return result;
-			}
-
-			template<typename U>
-			void operator+=(const U& other)
-			{
-				*m_register += other;
-			}
-			template<typename U>
-			void operator-=(const U& other)
-			{
-				*m_register -= other;
-			}
-
-			template<typename U>
-			void operator&=(const U& other)
-			{
-				*m_register &= other;
-			}
-
-		private:
-			Register<T>* m_register;
-		};
-		
 		template<typename T, size_t STAGES>
 		struct Pipeline
 		{
@@ -205,16 +108,20 @@ namespace dot
 			Pipeline() = default;
 			~Pipeline() = default;
 
-			void push(const T& value)
+			void push(const T& value, const T& address)
 			{
 				m_elements.front() = value;
+				m_addresses.front() = address;
 
 				if (m_load == 0) ++m_load;
 			}
 			void shift()
 			{
 				std::shift_right(m_elements.begin(), m_elements.end(), 1);
-				m_elements.begin()->clear();
+				std::shift_right(m_addresses.begin(), m_addresses.end(), 1);
+
+				m_elements.front() = 0;
+				m_addresses.front() = 0;
 
 				if (m_load < STAGES) ++m_load;
 			}
@@ -223,6 +130,7 @@ namespace dot
 				static_assert(std::is_default_constructible<T>::value, "Type must be default constructible");
 
 				std::fill(m_elements.begin(), m_elements.end(), T{});
+				std::fill(m_addresses.begin(), m_addresses.end(), T{});
 
 				m_load = 0;                                                    //Reset load
 			}
@@ -236,15 +144,16 @@ namespace dot
 				return STAGES;
 			}
 
-			T& operator[](unsigned int index)
+			std::pair<T, T> operator[](unsigned int index)
 			{
 				if (index + 1 > m_load) throw std::out_of_range("Index out of range!");
 
-				return m_elements[index];
+				return std::make_pair(m_elements[index], m_addresses[index]);
 			}
 
 		private:
 			std::array<T, STAGES> m_elements{};
+			std::array<T, STAGES> m_addresses{};
 
 			unsigned int m_load{};                                             //The range of m_load is [0, STAGES]
 		};

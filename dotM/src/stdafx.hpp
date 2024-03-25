@@ -5,6 +5,7 @@
 #include <sstream>
 #include <string>
 
+#include <span>
 #include <array>
 #include <vector>
 #include <queue>
@@ -29,6 +30,5 @@
 
 #include <filesystem>
 
-#include "dotM/Format/Type.hpp"
+#include "dotM/Architecture/FORMAT/Type.hpp"
 #include "dotM/Library/Bitwise.hpp"
-

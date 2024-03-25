@@ -1,23 +1,49 @@
 #pragma once
 
-template<typename T>
-constexpr bit get_bit(const T& value, unsigned int index)
+template<typename T, typename U>
+constexpr inline bool get_bit(const T& value, U index)
 {
+	static_assert(std::is_integral<T>::value, "Only integral types are allowed!");
+	static_assert(std::is_integral<U>::value, "Only integral types are allowed!");
+
+	static_assert(sizeof(T) <= sizeof(unsigned long long), "Size may not exceed unsigned long long size!");
+	static_assert(sizeof(U) <= sizeof(unsigned long long), "Size may not exceed unsigned long long size!");
+
 	return (value >> index) & 0x1;
 }
 template<typename T, typename U>
-constexpr U get_bits(const T& value, U index, U count)
+constexpr inline T get_bits(const T& value, U index, U count)
 {
-	return (value >> index) & ((1ul << count) - 1);
+	static_assert(std::is_integral<T>::value, "Only integral types are allowed!");
+	static_assert(std::is_integral<U>::value, "Only integral types are allowed!");
+
+	static_assert(sizeof(T) <= sizeof(unsigned long long), "Size may not exceed unsigned long long size!");
+	static_assert(sizeof(U) <= sizeof(unsigned long long), "Size may not exceed unsigned long long size!");
+
+	return (value >> index) & (((U{} + 1) << count) - 1);
 }
 
-template<typename T>
-constexpr T set_bit(const T& value, unsigned int index, bool state)
-{
-	return value ^ (-static_cast<int>(state) ^ value) & (1ul << index);
-}
 template<typename T, typename U>
-constexpr T set_bits(const T& value, unsigned int index, unsigned int count, const U& bits)
+constexpr inline T set_bit(const T& value, U index, bool state)
 {
-	return (value & ~(((1ul << count) - 1) << index)) | (bits << index);
+	static_assert(std::is_integral<T>::value, "Only integral types are allowed!");
+	static_assert(std::is_integral<U>::value, "Only integral types are allowed!");
+
+	static_assert(sizeof(T) <= sizeof(unsigned long long), "Size may not exceed unsigned long long size!");
+	static_assert(sizeof(U) <= sizeof(unsigned long long), "Size may not exceed unsigned long long size!");
+
+	return value ^ (-static_cast<int>(state) ^ value) & ((U{} + 1) << index);
+}
+template<typename T, typename U, typename V>
+constexpr inline T set_bits(const T& value, U index, U count, const V& src)
+{
+	static_assert(std::is_integral<T>::value, "Only integral types are allowed!");
+	static_assert(std::is_integral<U>::value, "Only integral types are allowed!");
+	static_assert(std::is_integral<V>::value, "Only integral types are allowed!");
+
+	static_assert(sizeof(T) <= sizeof(unsigned long long), "Size may not exceed unsigned long long size!");
+	static_assert(sizeof(U) <= sizeof(unsigned long long), "Size may not exceed unsigned long long size!");
+	static_assert(sizeof(V) <= sizeof(unsigned long long), "Size may not exceed unsigned long long size!");
+
+	return (value & ~((((U{} + 1) << count) - 1) << index)) | (src << index);
 }

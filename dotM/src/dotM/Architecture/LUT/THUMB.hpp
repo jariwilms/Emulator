@@ -2,7 +2,7 @@
 
 #include <stdafx.hpp>
 
-namespace dot::architecture
+namespace dot::arc
 {
     constexpr unsigned int THUMB_FORMAT_COUNT = 19;
 

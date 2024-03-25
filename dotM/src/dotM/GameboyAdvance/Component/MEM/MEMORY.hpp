@@ -4,7 +4,7 @@
 
 namespace dot::gba
 {
-	class MEMORY //TODO: template access specification? read/write throws exception if not allowed?
+	class MEMORY
 	{
 	public:
         enum class Access
@@ -13,73 +13,70 @@ namespace dot::gba
             Write,
             Read_Write,
         };
+		struct Range
+		{
+		public:
+			Range() = default;
+			explicit Range(size_t min, size_t max)
+				: min{ min }, max{ max } {}
 
-        MEMORY(Access access, size_t addr0, size_t addrf)
-            : m_memory{ std::make_unique<byte[]>((addrf - addr0) + 1) }, m_range{ addr0, addrf } {}
+			size_t min{};
+			size_t max{};
+		};
+
+        MEMORY(Access access, size_t addr0, size_t addrF)
+			: m_access{ access }, m_memory{ std::make_unique<byte[]>((addrF - addr0) + 1) }, m_range{ addr0, addrF } {}
 		virtual ~MEMORY() = default;
 
-
-		
 		template<typename T>
 		T read(size_t address) const
 		{
-			T value{};
-			
-			const auto offset = map_physical(address);
-			std::memcpy(&value, m_memory.get() + offset, sizeof(T));
-
-			return value;
+			if (m_access == Access::Write) throw std::runtime_error("Cannot read from write-only memory.");
+			return *data<T>(address);
 		}
 		template<typename T>
-		void write(size_t address, T data) const
+		void write(size_t address, const T& value) const
 		{
-			const auto offset = map_physical(address);
-			std::memcpy(m_memory.get() + offset, &data, sizeof(T));
+			if (m_access == Access::Read) throw std::runtime_error("Cannot write to read only memory!");
+			*data<T>(address) = value;
 		}
 
-		const byte* get(size_t address)
+		template<typename T = byte>
+		T* data(size_t address) const
 		{
-			const auto offset = map_physical(address);
-			
-			return m_memory.get() + offset;
-		}
-		template<typename T>
-		void set(size_t address, const T* data, size_t size) const
-		{
-			if (size > this->size()) throw std::runtime_error("Size is too large");
-
-			address = map_physical(address);
-			std::memcpy(m_memory.get() + address, data, size);
+			const auto offset = translate(address);
+			return std::launder<T>(reinterpret_cast<T*>(m_memory.get() + offset));
 		}
 
-		size_t size() const                                             //Returns the size of the memory in bytes
+		Access access() const
 		{
-			const auto& [addr0, addrF] = m_range;
-			
-			return (addrF - addr0) + 1;
+			return m_access;
 		}
-		std::pair<size_t, size_t> range() const
+		size_t size() const                                                    //Returns the size of the memory in bytes
+		{
+			return (m_range.max - m_range.min) + 1;
+		}
+		Range range() const
 		{
 			return m_range;
 		}
-
-		bool in_bounds(size_t address) const
+		bool contains(size_t address) const
 		{
-			const auto& [addr0, addrF] = m_range;
-			
-			return address >= addr0 && address <= addrF;
+			return address >= m_range.min  && address <= m_range.max;
 		}
 
 	protected:
-		size_t map_physical(size_t address) const
+		size_t translate(size_t address) const
 		{
-			if (!in_bounds(address)) throw std::invalid_argument("Address out of range!");
+			if (!contains(address)) throw std::invalid_argument("Address out of range!");
 			
-			return address - m_range.first;
+			return address - m_range.min;
 		}
 		
 	private:
+		const Access m_access{};
+
 		std::unique_ptr<byte[]> m_memory{};
-		std::pair<size_t, size_t> m_range{};
+		const Range m_range{};
 	};
 }

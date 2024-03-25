@@ -72,10 +72,10 @@
     <ClInclude Include="src\dotM\Architecture\ARM\ARM.hpp">
       <Filter>dotM\Architecture\ARM</Filter>
     </ClInclude>
-    <ClInclude Include="src\dotM\Architecture\THUMB\THUMB.hpp">
+    <ClInclude Include="src\dotM\Architecture\LUT\LUT_THUMB.hpp">
       <Filter>dotM\Architecture\THUMB</Filter>
     </ClInclude>
-    <ClInclude Include="src\dotM\Format\Type.hpp">
+    <ClInclude Include="src\dotM\Architecture\FORMAT\Type.hpp">
       <Filter>dotM\Format</Filter>
     </ClInclude>
     <ClInclude Include="src\dotM\Gameboy\Component\CPU\CPU.hpp">
@@ -108,7 +108,7 @@
     <ClInclude Include="src\dotM\GameboyAdvance\Component\PPU\PPU.hpp">
       <Filter>dotM\GameboyAdvance\Component\PPU</Filter>
     </ClInclude>
-    <ClInclude Include="src\dotM\GameboyAdvance\Component\SCREEN\AGS101.hpp">
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\DISPLAY\DISPLAY.hpp">
       <Filter>dotM\GameboyAdvance\Component\SCREEN</Filter>
     </ClInclude>
     <ClInclude Include="src\dotM\GameboyAdvance\GameboyAdvance.hpp">
@@ -117,7 +117,7 @@
     <ClInclude Include="src\dotM\GameboyAdvance\Specification\GBA.hpp">
       <Filter>dotM\GameboyAdvance\Specification</Filter>
     </ClInclude>
-    <ClInclude Include="src\dotM\GameboyAdvance\Specification\MEMORY_MAP.hpp">
+    <ClInclude Include="src\dotM\Architecture\MEMORY\MAP.hpp">
       <Filter>dotM\GameboyAdvance\Specification</Filter>
     </ClInclude>
     <ClInclude Include="src\dotM\Library\Bitwise.hpp">
@@ -130,6 +130,16 @@
       <Filter>dotM\Model\Component\CPU</Filter>
     </ClInclude>
     <ClInclude Include="src\stdafx.hpp" />
+    <ClInclude Include="src\dotM\Architecture\LUT\ARM.hpp" />
+    <ClInclude Include="src\dotM\Architecture\LUT\THUMB.hpp" />
+    <ClInclude Include="src\dotM\Architecture\EXCEPT\VECTOR.hpp" />
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\TIMER\Timer.hpp" />
+    <ClInclude Include="src\dotM\GameboyAdvance\Specification\TIMING.hpp" />
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\BUS\IConnectable.hpp" />
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\DMA\DMAController.hpp" />
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\DMA\DMAChannel.hpp" />
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\INPUT\KeyController.hpp" />
+    <ClInclude Include="src\dotM\GameboyAdvance\Component\INTERRUPT\IPeripheral.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\dotM\GameboyAdvance\Component\CPU\ARM7TDMI.cpp">
@@ -142,5 +152,6 @@
       <Filter>dotM\Library</Filter>
     </ClCompile>
     <ClCompile Include="src\stdafx.cpp" />
+    <ClCompile Include="src\dotM\GameboyAdvance\Component\DMA\DMAController.cpp" />
   </ItemGroup>
 </Project>

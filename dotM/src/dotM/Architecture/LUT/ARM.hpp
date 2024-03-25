@@ -2,7 +2,7 @@
 
 #include <stdafx.hpp>
 
-namespace dot::architecture
+namespace dot::arc
 {
 	constexpr unsigned int ARM_FORMAT_COUNT = 15;
 

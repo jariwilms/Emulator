@@ -4,24 +4,23 @@
 
 namespace dot::gba
 {
+	ARM7TDMI::ARM7TDMI()
+    {
+		reset();
+    }
+
     void ARM7TDMI::cycle()
     {
+        if (m_halted) return;
         if (m_cycles)
         {
             --m_cycles;
             return;
         }
 
-
-
-		const auto& cpsr = m_registers.get_cpsr();
-        bool tFlag = cpsr.flag(PSR::Flag::Thumb);
-
-        tFlag ? m_pipelineTHUMB.shift() : m_pipelineARM.shift();
-        
-        execute();
-        decode();
         fetch();
+        decode();
+        execute();
     }
     void ARM7TDMI::reset()
     {
@@ -31,14 +30,14 @@ namespace dot::gba
         m_registers.reset();                                                   //All registers are set to 0, some values are adjusted based on reset specification
     }
 
-	void ARM7TDMI::connect(std::shared_ptr<BUS<32>> bus)
+    ARM7TDMI::State ARM7TDMI::state()
 	{
-        m_BUS = bus;
+		return State{ m_pipelineARM, m_pipelineTHUMB, m_registers, m_cycles };
 	}
 
     void ARM7TDMI::fetch()
     {
-        const auto& cpsr = m_registers.get_cpsr();
+        const auto& cpsr = m_registers.cpsr();
         dword address{};
 
 		
@@ -47,15 +46,15 @@ namespace dot::gba
 		
         if (tFlag)
         {
-            Instruction<word> instruction{};
+            ins16_t instruction{};
             static dword value{};
 
-            address = m_registers.pc & ~0x1;                                   //0xFFFFFFFE, 2 byte alignment
-            const auto fetch = !get_bit(m_registers.pc.get(), 1);              //Only fetch if the "2" bit is not set
+            address = m_registers[15] & ~0x1;                                  //0xFFFFFFFE, 2 byte alignment
+            const auto fetch = m_registers[15][1];                             //Only fetch if the "2" bit is not set
 
             if (fetch)                                                         
             {
-                value = m_BUS->read<dword>(address);
+                value = bus->read<dword>(address);
                 instruction = static_cast<word>(value);
             }
             else
@@ -63,26 +62,27 @@ namespace dot::gba
                 instruction = static_cast<word>(value >> 16);
             }
 
-            instruction.address = address;
-
-            m_pipelineTHUMB.push(instruction);
-            m_registers.pc += 2;
+            m_pipelineTHUMB.push(instruction, address);
+            m_pipelineTHUMB.shift();
+			
+            m_registers[15] += 2;
         }
         else
         {
-            Instruction<dword> instruction{};
+            ins32_t instruction{};
 
-            address = m_registers.pc & ~0x3;                                   //0xFFFFFFFC, 4 byte alignment
-            instruction = m_BUS->read<dword>(address);
-            instruction.address = address;
+            address = m_registers[15] & ~0x3;                                  //0xFFFFFFFC, 4 byte alignment
+            instruction = bus->read<dword>(address);
 
-            m_pipelineARM.push(instruction);
-            m_registers.pc += 4;
+            m_pipelineARM.push(instruction, address);
+            m_pipelineARM.shift();
+			
+            m_registers[15] += 4;
         }
     }
     void ARM7TDMI::decode()
     {
-		const auto& cpsr = m_registers.get_cpsr();
+		const auto& cpsr = m_registers.cpsr();
         const auto tFlag = cpsr.flag(PSR::Flag::Thumb);
 
 
@@ -91,12 +91,12 @@ namespace dot::gba
         {
             if (m_pipelineTHUMB.load() < 2) return;
 
-            const auto& instruction = m_pipelineTHUMB[1];
+            const auto& [instruction, address] = m_pipelineTHUMB[1];
 
-			for (int i = architecture::THUMB_FORMAT_COUNT - 1; i >= 0; --i)
+			for (int i = arc::THUMB_FORMAT_COUNT - 1; i >= 0; --i)
 			{
-				const auto mask = instruction & architecture::THUMB_INSTRUCTION_MASK[i];
-				const bool match = (mask == architecture::THUMB_INSTRUCTION_FORMAT[i]);
+				const auto mask = instruction & arc::THUMB_INSTRUCTION_MASK[i];
+				const bool match = (mask == arc::THUMB_INSTRUCTION_FORMAT[i]);
 
 				if (match)
 				{
@@ -110,12 +110,12 @@ namespace dot::gba
         {
             if (m_pipelineARM.load() < 2) return;
 
-			const auto& instruction = m_pipelineARM[1];
+			const auto& [instruction, address] = m_pipelineARM[1];
 
-			for (int i = architecture::ARM_FORMAT_COUNT - 1; i >= 0; --i)
+			for (int i = arc::ARM_FORMAT_COUNT - 1; i >= 0; --i)
 			{
-				const auto mask = instruction & architecture::ARM_INSTRUCTION_MASK[i];
-				const bool match = (mask == architecture::ARM_INSTRUCTION_FORMAT[i]);
+				const auto mask = instruction & arc::ARM_INSTRUCTION_MASK[i];
+				const bool match = (mask == arc::ARM_INSTRUCTION_FORMAT[i]);
 
 				if (match)
 				{
@@ -130,7 +130,7 @@ namespace dot::gba
     }
     void ARM7TDMI::execute()
     {
-        const auto& cpsr = m_registers.get_cpsr();
+        const auto& cpsr = m_registers.cpsr();
         const auto tFlag = cpsr.flag(PSR::Flag::Thumb);
         
 
@@ -139,7 +139,7 @@ namespace dot::gba
 		{
             if (m_pipelineTHUMB.load() < 3) return;
 
-            const auto& instruction = m_pipelineTHUMB[2];
+            const auto& [instruction, address] = m_pipelineTHUMB[2];
 
 
 
@@ -169,12 +169,12 @@ namespace dot::gba
 
 
 
-			std::cout << std::format("[{:#010x}] ", instruction.address) << std::format("{0}\n", operationToInstructionName.at(m_operationTHUMB));
+			std::cout << std::format("[{:#010x}] ", address) << std::format("{0}\n", operationToInstructionName.at(m_operationTHUMB));
 #endif
 
 
 
-			using instructionFunc = void (ARM7TDMI::*)(const Instruction<word>&);
+			using instructionFunc = void (ARM7TDMI::*)(ins16_t);
 			const std::unordered_map<OperationTHUMB, instructionFunc> operationToInstruction
 			{
                 { OperationTHUMB::MoveShiftedRegister,                &ARM7TDMI::move_shifted_register }, 
@@ -204,11 +204,11 @@ namespace dot::gba
         {
             if (m_pipelineARM.load() < 3) return;
 
-			const auto& instruction = m_pipelineARM[2];
+			const auto& [instruction, address] = m_pipelineARM[2];
 
             if (!check_condition(instruction, cpsr))
             {
-                //std::cout << std::format("[{:#010x}] Not executed\n", instruction.address);
+                std::cout << std::format("[{:#010x}] Not executed\n", address);
 
                 return;
             }
@@ -237,12 +237,12 @@ namespace dot::gba
 
 
 
-            std::cout << std::format("[{:#010x}] ", instruction.address) << std::format("{0}\n", operationToInstructionName.at(m_operationARM));
+            std::cout << std::format("[{:#010x}] ", address) << std::format("{0}\n", operationToInstructionName.at(m_operationARM));
 #endif
 
 
 
-            using instructionFunc = void (ARM7TDMI::*)(const Instruction<dword>&);
+            using instructionFunc = void (ARM7TDMI::*)(ins32_t);
             const std::unordered_map<OperationARM, instructionFunc> operationToInstruction
             {
                 { OperationARM::DataProcessing,                      &ARM7TDMI::data_processing               },
@@ -266,26 +266,69 @@ namespace dot::gba
         }
     }
 
-    void ARM7TDMI::switch_mode(OperatingMode operatingMode)
+	void ARM7TDMI::interrupt()
 	{
-		auto& cpsr = m_registers.get_cpsr();
+        using namespace dot::arc;
+		
+        const auto IME = bus->read<dword>(REG_IME);
+		const auto IE  = bus->read<dword>(REG_IE);
+		const auto IF  = bus->read<dword>(REG_IF);
 
-		cpsr = set_bits<dword>(cpsr, 0, 5, static_cast<int>(operatingMode));
-		m_registers.bank(operatingMode);
+        const auto enabled = get_bit(IME, 0);
+		const auto interrupts = IE & IF;
+        if (!enabled || !interrupts) return;
+		
+		
+		
+        irq_temp();
 	}
-	
+    void ARM7TDMI::irq_temp()
+    {
+		using namespace dot::arc;
+
+		auto& cpsr = m_registers.cpsr();
+        auto& spsr = m_registers.spsr(OperatingMode::IRQ);
+		const auto tFlag = cpsr.flag(PSR::Flag::Thumb);
+
+		if (cpsr.flag(PSR::Flag::IRQ)) return;                                 //IRQ flag set means disabled
+
+
+		
+        switch_mode(OperatingMode::IRQ);
+        cpsr.set_flag(PSR::Flag::IRQ, true);                                   //Disable further IRQ's
+        spsr = cpsr;
+
+        if (tFlag)
+        {
+            cpsr.set_flag(PSR::Flag::Thumb, false);
+            m_registers[14] = m_registers[15];
+        }
+        else
+        {
+            m_registers[14] = m_registers[15] - 4;
+        }
+
+        m_registers[15] = VEC_IRQ;
+        m_pipelineARM.flush();
+    }
     void ARM7TDMI::exception()
     {
-        //p.62;
+
     }
     void ARM7TDMI::abort()
     {
 
     }
+    
+    void ARM7TDMI::switch_mode(OperatingMode operatingMode)
+	{
+		auto& cpsr = m_registers.cpsr();
 
+        if (cpsr.mode() != operatingMode) cpsr = set_bits<dword>(cpsr, 0, 5, static_cast<int>(operatingMode));
+		m_registers.bank(operatingMode);
+	}
 
-
-    bool ARM7TDMI::check_condition(const Instruction<dword>& instruction, const PSR& cpsr)
+    bool ARM7TDMI::check_condition(ins32_t instruction, const PSR& cpsr)
 	{
 		const auto condition = get_bits(instruction, 28, 4);
 
@@ -317,10 +360,10 @@ namespace dot::gba
 			default:  return false;
 		}
 	}
-    std::pair<dword, bit> ARM7TDMI::shift_carry(dword value, ShiftType type, dword amount, bit carryFlag)
+    std::pair<dword, bool> ARM7TDMI::shift_carry(dword value, ShiftType type, dword amount, bool carryFlag)
     {
         dword result{};
-        bit carryOut{};
+        bool carryOut{};
 
         const auto dwordSize = sizeof(dword) * 8;
 
@@ -346,7 +389,7 @@ namespace dot::gba
         const auto lsl_gt32 = [&]()
         {
             result = 0;
-            carryOut = 0;
+            carryOut = false;
         };
 
         const auto lsr_eq0  = [&]()
@@ -366,7 +409,7 @@ namespace dot::gba
         const auto lsr_gt32 = [&]()
         {
             result = 0;
-            carryOut = 0;
+            carryOut = false;
         };
 
         const auto asr_eq0  = [&]()
@@ -410,7 +453,7 @@ namespace dot::gba
         };
         const auto ror_gt32 = [&]()
         {
-            while (amount > 32) 
+            while (amount > 32)
                 amount -= 32;
 
             if (amount < 32) ror_lt32();
@@ -446,9 +489,9 @@ namespace dot::gba
     }
 
 
-	
-    //ARM Instructions
-    void ARM7TDMI::data_processing(const Instruction<dword>& instruction)
+
+#pragma region ARM INSTRUCTIONS
+    void ARM7TDMI::data_processing(ins32_t instruction)
     {
         const auto rdIndex  = get_bits(instruction, 12,  4);
         const auto rnIndex  = get_bits(instruction, 16,  4);
@@ -463,7 +506,7 @@ namespace dot::gba
 		
         Register<dword> result{};
 
-        auto& cpsr = m_registers.get_cpsr();
+        auto& cpsr = m_registers.cpsr();
         auto carry = cpsr.flag(PSR::Flag::Carry);
 
 
@@ -529,7 +572,7 @@ namespace dot::gba
 			default:                                throw std::invalid_argument("Invalid opcode");
 		}
 
-        if (!isTest) result = rd;                                              //Result will be used for flags
+        if (!isTest) result = rd;                                              //Test operations may not write back to Rd, so we use a different variable
 
         
 
@@ -558,12 +601,16 @@ namespace dot::gba
         {
             if (rdIndex == 15)                                                 //Special case if the destination register is the PC
             {
-                cpsr = m_registers.get_spsr(cpsr.mode());
+                const auto mode = cpsr.mode();
+                cpsr = m_registers.spsr(mode);
 
-                const auto tFlag = cpsr[5];
-				
-                if (tFlag) m_pipelineTHUMB.flush();
-                else       m_pipelineARM.flush();
+                if (!isTest)                                                   //Test operations do not flush the pipeline
+                {
+                    const auto tFlag = cpsr.flag(PSR::Flag::Thumb);
+					
+                    if (tFlag) m_pipelineTHUMB.flush();
+                    else       m_pipelineARM.flush();
+                }
             }
             else
             {
@@ -577,7 +624,7 @@ namespace dot::gba
                 {
                     const auto signRn     = get_bit(rn,     31);               //Check for overflow by comparing the sign of the operands
                     const auto signOp2    = get_bit(op2,    31);               //If the signs are the same, but the result has a different sign, overflow has occurred
-                    const auto signResult = get_bit(result, 31);               //(i.e. the sign of the result is different from the signs of the operands)
+                    const auto signResult = result[31];                        //(i.e. the sign of the result is different from the signs of the operands)
 
                     const auto v = ((signRn == signOp2) && (signResult != signRn));
                     cpsr.set_flag(PSR::Flag::Overflow, v);
@@ -585,13 +632,13 @@ namespace dot::gba
             }
         }
     }
-    void ARM7TDMI::psr_transfer(const Instruction<dword>& instruction)
+    void ARM7TDMI::psr_transfer(ins32_t instruction)
     {
         const auto pFlag = get_bit(instruction, 22);
         const auto mFlag = get_bit(instruction, 21);
         
-        auto& cpsr = m_registers.get_cpsr();
-        auto& spsr = m_registers.get_spsr(cpsr.mode());
+        auto& cpsr = m_registers.cpsr();
+        auto& spsr = m_registers.spsr(cpsr.mode());
 
 
 		
@@ -639,9 +686,8 @@ namespace dot::gba
                 if (cpsr.mode() == OperatingMode::USR) mask   &= 0xFF000000;
                 if (mask & 0xFF)                       result |= 0x00000010;   //idk
 
-                __debugbreak();
-                //TODO: switch mode?
-				//cpsr = (cpsr & ~mask) | (result & mask); //remove this
+				cpsr = (cpsr & ~mask) | (result & mask);
+                switch_mode(cpsr.mode());
             }
         }
         else
@@ -654,7 +700,7 @@ namespace dot::gba
             else       rd = cpsr;
         }
     }
-    void ARM7TDMI::multiply(const Instruction<dword>& instruction)
+    void ARM7TDMI::multiply(ins32_t instruction)
     {
         const auto rdIndex = get_bits(instruction, 16, 4);
         const auto rnIndex = get_bits(instruction, 12, 4);
@@ -684,7 +730,7 @@ namespace dot::gba
 
         if (sFlag)
         {
-            auto& cpsr = m_registers.get_cpsr();
+            auto& cpsr = m_registers.cpsr();
 			
             cpsr.set_flag(PSR::Flag::Negative, rd[31]);          
             cpsr.set_flag(PSR::Flag::Zero,     rd == 0);         
@@ -694,7 +740,7 @@ namespace dot::gba
 
         if (rdIndex == 15) m_pipelineARM.flush();
     }	
-    void ARM7TDMI::multiply_long(const Instruction<dword>& instruction)
+    void ARM7TDMI::multiply_long(ins32_t instruction)
     {
         const auto rdhiIndex = get_bits(instruction, 16, 4);
 		const auto rdloIndex = get_bits(instruction, 12, 4);
@@ -725,7 +771,7 @@ namespace dot::gba
         
         if (sFlag)
         {
-            auto& cpsr = m_registers.get_cpsr();
+            auto& cpsr = m_registers.cpsr();
             const auto z = (rdhi == 0) && (rdlo == 0);
 
             cpsr.set_flag(PSR::Flag::Negative, rdhi[31]);
@@ -736,7 +782,7 @@ namespace dot::gba
 
         if (rdhiIndex == 15 || rdloIndex == 15) m_pipelineARM.flush();
     }
-    void ARM7TDMI::single_data_swap(const Instruction<dword>& instruction)
+    void ARM7TDMI::single_data_swap(ins32_t instruction)
     {
         const auto rdIndex = get_bits(instruction, 12, 4);
         const auto rnIndex = get_bits(instruction, 16, 4);
@@ -754,13 +800,13 @@ namespace dot::gba
 		
         if (bFlag)
         {
-            value = m_BUS->read<byte>(address);
-            m_BUS->write<byte>(address, rm);
+            value = bus->read<byte>(address);
+            bus->write<byte>(address, rm);
         }
         else
         {
-            value = m_BUS->read<dword>(address);                                 //TODO: readwordrotate?
-            m_BUS->write<dword>(address, rm);
+            value = bus->read<dword>(address);                                 //TODO: readwordrotate?
+            bus->write<dword>(address, rm);
         }
 
         rd = value;
@@ -769,7 +815,7 @@ namespace dot::gba
 		
         if (rdIndex == 15) m_pipelineARM.flush();
     }
-    void ARM7TDMI::branch_exchange(const Instruction<dword>& instruction)
+    void ARM7TDMI::branch_exchange(ins32_t instruction)
     {
 		const auto rnIndex = get_bits(instruction, 0, 4);
 
@@ -781,21 +827,21 @@ namespace dot::gba
 
         if (tFlag)
         {
-			m_registers.pc = rn & ~0x1;
+			m_registers[15] = rn & ~0x1;
             m_pipelineTHUMB.flush();
         }
         else
         {
-            m_registers.pc = rn & ~0x3;
+            m_registers[15] = rn & ~0x3;
             m_pipelineARM.flush();
         }
 		
 
 		
-		auto& cpsr = m_registers.get_cpsr();
+		auto& cpsr = m_registers.cpsr();
         cpsr.set_flag(PSR::Flag::Thumb, tFlag);
     }
-    void ARM7TDMI::halfword_data_transfer(const Instruction<dword>& instruction)
+    void ARM7TDMI::halfword_data_transfer(ins32_t instruction)
     {
 		const auto rdIndex = get_bits(instruction, 12, 4);
 		const auto rnIndex = get_bits(instruction, 16, 4);
@@ -819,6 +865,7 @@ namespace dot::gba
 
         if (iFlag)  offset   = ((instruction >> 4) & 0xF0) | (instruction & 0xF);
         else        offset   = rm;
+
         if (!uFlag) offset  *= -1;
         if (pFlag)  address += offset;
 
@@ -831,22 +878,22 @@ namespace dot::gba
             case 0b00: return single_data_swap(instruction);
 			case 0b01:
             {
-                if (lFlag) rd = m_BUS->read<word>(address);                      //TODO: readhalfrotate
-                else       m_BUS->write<word>(address, rd);
+                if (lFlag) rd = bus->read<word>(address);                      //TODO: readhalfrotate
+                else       bus->write<word>(address, rd);
 
                 break;
             }
 			case 0b10: 
             {
-                if (lFlag) rd = m_BUS->read<byte>(address);
-                else       m_BUS->write<byte>(address, rd);
+                if (lFlag) rd = bus->read<byte>(address);
+                else       bus->write<byte>(address, rd);
 
                 break;
             }
 			case 0b11: 
             {
-                if (lFlag) rd = sign_extend<int, 15>(m_BUS->read<word>(address));
-                else       m_BUS->write<word>(address, rd);
+                if (lFlag) rd = sign_extend<int, 15>(bus->read<word>(address));
+                else       bus->write<word>(address, rd);
 
                 break;
             }
@@ -857,7 +904,7 @@ namespace dot::gba
         if (!pFlag && wFlag)        rn += offset;
         if (lFlag && rdIndex == 15) m_pipelineARM.flush();
     }
-    void ARM7TDMI::single_data_transfer(const Instruction<dword>& instruction)
+    void ARM7TDMI::single_data_transfer(ins32_t instruction)
     {
 		const auto rdIndex  = get_bits(instruction, 12, 4);
 		const auto rnIndex  = get_bits(instruction, 16, 4);
@@ -883,7 +930,7 @@ namespace dot::gba
             const auto shift   = get_bits(instruction, 5, 2);
 			const auto amount  = get_bits(instruction, 7, 5);
 
-			const auto& cpsr = m_registers.get_cpsr();
+			const auto& cpsr = m_registers.cpsr();
             auto carry       = cpsr.flag(PSR::Flag::Carry);
             
             dword rm       = m_registers[rmIndex];
@@ -905,12 +952,12 @@ namespace dot::gba
         {
 			if (bFlag)
 			{
-                rd = m_BUS->read<byte>(address);
+                rd = bus->read<byte>(address);
 			}
 			else
 			{
 				auto rotate = (address & 0x3) << 3;                            //Check for unaligned address
-				auto value = m_BUS->read<dword>(address);                        //TODO: rotate lambda function
+				auto value = bus->read<dword>(address);                        //TODO: rotate lambda function
 				
 				rd = (value >> rotate) | (value << (32 - rotate));             //Rotate the value to the correct position in case of unaligned access
 			}
@@ -927,11 +974,11 @@ namespace dot::gba
 				byte bt = rd & 0xFF;
 				dword result = (bt << 24 | bt << 16 | bt << 8 | bt);           //Bits [0-7] are repeated across entire dword
 
-				m_BUS->write<dword>(address, result);
+				bus->write<dword>(address, result);
 			}
 			else
 			{
-				m_BUS->write<dword>(address, rd);
+				bus->write<dword>(address, rd);
 			}
         }
 
@@ -940,30 +987,34 @@ namespace dot::gba
         if (!pFlag && wFlag) rn += offset12;
         if (lFlag && rdIndex == 15) m_pipelineARM.flush();
     }
-    void ARM7TDMI::undefined(const Instruction<dword>& instruction)
+    void ARM7TDMI::undefined(ins32_t instruction)
     {
-        auto& cpsr = m_registers.get_cpsr();
-        auto& spsr = m_registers.get_spsr(OperatingMode::UND);
+        using namespace dot::arc;
+		
+        auto& cpsr = m_registers.cpsr();
+        auto& spsr = m_registers.spsr(OperatingMode::UND);
+
+		
 		
         spsr = cpsr;
 		
 		switch_mode(OperatingMode::UND);
         cpsr.set_flag(PSR::Flag::IRQ, true);
 
-        m_registers.lr = m_registers.pc - 4;
-		m_registers.pc = 0x04;
+        m_registers[14] = m_registers[15] - 4;
+        m_registers[15] = VEC_UNDEFINED;
 		
         m_pipelineARM.flush();
     }
-    void ARM7TDMI::block_data_transfer(const Instruction<dword>& instruction)
+    void ARM7TDMI::block_data_transfer(ins32_t instruction)
     {
-		const auto rnIndex      = get_bits(instruction, 16, 4);
-		const auto registerList = get_bits(instruction, 0, 16);
-		const auto pFlag        = get_bit(instruction, 24);
-		const auto uFlag        = get_bit(instruction, 23);
-		const auto sFlag        = get_bit(instruction, 22);
-		const auto wFlag        = get_bit(instruction, 21);
-		const auto lFlag        = get_bit(instruction, 20);
+		const auto rnIndex      = get_bits(instruction, 16,  4);
+		const auto registerList = get_bits(instruction,  0, 16);
+		const auto pFlag        = get_bit (instruction, 24);
+		const auto uFlag        = get_bit (instruction, 23);
+		const auto sFlag        = get_bit (instruction, 22);
+		const auto wFlag        = get_bit (instruction, 21);
+		const auto lFlag        = get_bit (instruction, 20);
 
         auto& rn = m_registers[rnIndex];
         auto list = registerList;
@@ -991,7 +1042,7 @@ namespace dot::gba
         {
             __debugbreak();
 
-            list |= 1ul << 15;                                                   //Only r15 will be stored, but the base will be incremented as if every register is stored (+64);
+            list |= 1ul << 15;                                                 //Only r15 will be stored, but the base will be incremented as if every register is stored (+64);
             registers.emplace_back(m_registers[15]);
         }
 
@@ -1011,26 +1062,22 @@ namespace dot::gba
         
 
 
-        if (lFlag) //TODO: cleanup
+        dword registerOffset{};
+		
+        if (lFlag)
         {
-			dword offsetasd{};
-
 			for (auto& reg : registers)
 			{
-				reg.get() = m_BUS->read<dword>(static_cast<qword>(address) + offsetasd);
-
-				offsetasd += 4;
+				reg.get() = bus->read<dword>(static_cast<qword>(address) + registerOffset);
+				registerOffset += 4;
 			}
         }
         else
         {
-			dword offsetdef{};
-
 			for (const auto& reg : registers)
 			{
-				m_BUS->write<dword>(static_cast<qword>(address) + offsetdef, reg.get());
-
-				offsetdef += 4;
+				bus->write<dword>(static_cast<qword>(address) + registerOffset, reg.get());
+				registerOffset += 4;
 			}
         }
 
@@ -1039,13 +1086,13 @@ namespace dot::gba
         if (!pFlag && wFlag) rn += (offset * registerCount);
         //TODO: nba github adds some code at the end
     }
-    void ARM7TDMI::branch(const Instruction<dword>& instruction)
+    void ARM7TDMI::branch(ins32_t instruction)
     {
 		const auto offset24 = get_bits(instruction,  0, 24);
 		const auto lFlag    = get_bit (instruction, 24);
 
         dword offset = offset24;
-        
+
 
 		
         offset <<= 2;
@@ -1053,50 +1100,54 @@ namespace dot::gba
 
                                                     
 
+        const dword nextInstruction = m_registers[15] - 4;
+
         if (lFlag)
         {
-			m_registers.lr = m_registers.pc - 4;
-			m_registers.pc += offset;
+			m_registers[14] = nextInstruction;
+			m_registers[15] += offset;
         }
         else
         {
-            m_registers.pc += offset;
+            m_registers[15] += offset;
         }
 
         m_pipelineARM.flush();
     }
-    void ARM7TDMI::coprocessor_data_transfer(const Instruction<dword>& instruction)
+    void ARM7TDMI::coprocessor_data_transfer(ins32_t instruction)
     {
         __debugbreak();
     }
-    void ARM7TDMI::coprocessor_data_operation(const Instruction<dword>& instruction)
+    void ARM7TDMI::coprocessor_data_operation(ins32_t instruction)
     {
         __debugbreak();
     }
-    void ARM7TDMI::coprocessor_register_transfer(const Instruction<dword>& instruction)
+    void ARM7TDMI::coprocessor_register_transfer(ins32_t instruction)
     {
         __debugbreak();
     }
-    void ARM7TDMI::software_interrupt(const Instruction<dword>& instruction)
+    void ARM7TDMI::software_interrupt(ins32_t instruction)
     {
-		auto& cpsr = m_registers.get_cpsr();
-		auto& spsr = m_registers.get_spsr(OperatingMode::SVC);
+        using namespace dot::arc;
+		
+		auto& cpsr = m_registers.cpsr();
+		auto& spsr = m_registers.spsr(OperatingMode::SVC);
+		
 
+		
 		spsr = cpsr;
 		
 		switch_mode(OperatingMode::SVC);
 		cpsr.set_flag(PSR::Flag::IRQ, true);
 
-		m_registers.lr = m_registers.pc - 4;
-		m_registers.pc = 0x08;
+		m_registers[14] = m_registers[15] - 4;
+		m_registers[15] = VEC_SOFTWARE_INTERRUPT;
 
 		m_pipelineARM.flush();
     }
-
-
-	
-    //THUMB Instructions
-    void ARM7TDMI::move_shifted_register(const Instruction<word>& instruction)
+#pragma endregion
+#pragma region THUMB INSTRUCTIONS
+    void ARM7TDMI::move_shifted_register(ins16_t instruction)
     {
         const auto rdIndex = get_bits(instruction,  0, 3);
         const auto rsIndex = get_bits(instruction,  3, 3);
@@ -1106,7 +1157,7 @@ namespace dot::gba
         auto& rd = m_registers[rdIndex];
         dword rs = m_registers[rsIndex];
 
-        auto& cpsr = m_registers.get_cpsr();
+        auto& cpsr = m_registers.cpsr();
         auto carry = cpsr.flag(PSR::Flag::Carry);
 		
 
@@ -1120,7 +1171,7 @@ namespace dot::gba
         cpsr.set_flag(PSR::Flag::Zero,     rd == 0);
         cpsr.set_flag(PSR::Flag::Carry,    carry);
     }
-    void ARM7TDMI::add_subtract(const Instruction<word>& instruction)
+    void ARM7TDMI::add_subtract(ins16_t instruction)
     {
         const auto rdIndex  = get_bits(instruction,  0, 3);
         const auto rsIndex  = get_bits(instruction,  3, 3);
@@ -1140,7 +1191,7 @@ namespace dot::gba
         if (opcode) rd = rs - op2;
         else        rd = rs + op2;
     }
-    void ARM7TDMI::move_compare_add_subtract_immediate(const Instruction<word>& instruction)
+    void ARM7TDMI::move_compare_add_subtract_immediate(ins16_t instruction)
     {
         const auto rdIndex = get_bits(instruction,  8, 3);
         const auto offset8 = get_bits(instruction,  0, 8);
@@ -1149,7 +1200,7 @@ namespace dot::gba
         auto& rd   = m_registers[rdIndex];
         Register<dword> result{};
 
-        auto& cpsr = m_registers.get_cpsr();
+        auto& cpsr = m_registers.cpsr();
 
 
 
@@ -1170,7 +1221,7 @@ namespace dot::gba
 		cpsr.set_flag(PSR::Flag::Negative, result[31]);
 		cpsr.set_flag(PSR::Flag::Zero,     result == 0);
     }
-    void ARM7TDMI::alu_operations(const Instruction<word>& instruction)
+    void ARM7TDMI::alu_operations(ins16_t instruction)
     {
         const auto rdIndex = get_bits(instruction, 0, 3);
         const auto rsIndex = get_bits(instruction, 3, 3);
@@ -1180,7 +1231,7 @@ namespace dot::gba
         dword rs = m_registers[rsIndex];
         Register<dword> result{};
 
-        auto& cpsr = m_registers.get_cpsr();
+        auto& cpsr = m_registers.cpsr();
 		auto carry = cpsr.flag(PSR::Flag::Carry);
 		
 		
@@ -1223,7 +1274,7 @@ namespace dot::gba
 		//const auto v = ((signRn == signOp2) && (signResult != signRn));
 		//cpsr = set_bit<dword>(cpsr, PSR::Flag::Overflow, v);
     }
-    void ARM7TDMI::hi_register_operations__branch_exchange(const Instruction<word>& instruction)
+    void ARM7TDMI::hi_register_operations__branch_exchange(ins16_t instruction)
     {
 		const auto rdIndex = get_bits(instruction, 0, 3);
 		const auto rsIndex = get_bits(instruction, 3, 3);
@@ -1235,7 +1286,7 @@ namespace dot::gba
 		dword rs = m_registers[rsIndex | (h2Flag << 3)];                       //If it is set, the register index is offset by 8
         Register<dword> result{};
 
-        auto& cpsr = m_registers.get_cpsr();
+        auto& cpsr = m_registers.cpsr();
 
 
 		
@@ -1266,12 +1317,12 @@ namespace dot::gba
 
                 if (tFlag)
                 {
-                    m_registers.pc = rs & ~0x1;
+                    m_registers[15] = rs & ~0x1;
                     m_pipelineTHUMB.flush();
                 }
                 else
                 {
-                    m_registers.pc = rs & ~0x3;
+                    m_registers[15] = rs & ~0x3;
                     m_pipelineARM.flush();
                 }
 
@@ -1281,7 +1332,7 @@ namespace dot::gba
 			}
         }
     }
-    void ARM7TDMI::pc_relative_load(const Instruction<word>& instruction)
+    void ARM7TDMI::pc_relative_load(ins16_t instruction)
     {
         const auto rdIndex = get_bits(instruction, 8, 3);
         const auto word8   = get_bits(instruction, 0, 8);
@@ -1291,12 +1342,12 @@ namespace dot::gba
 
 
 
-        address  = m_registers.pc & ~0x2;                                      //Bit 1 of the PC is forced to 0 to ensure it is word aligned
+        address  = m_registers[15] & ~0x2;                                      //Bit 1 of the PC is forced to 0 to ensure it is word aligned
         address += word8 << 2;
 
-        rd = m_BUS->read<word>(address);
+        rd = bus->read<word>(address);
     }
-    void ARM7TDMI::load_store_register_offset(const Instruction<word>& instruction)
+    void ARM7TDMI::load_store_register_offset(ins16_t instruction)
     {
         const auto rdIndex = get_bits(instruction,  0, 3);
         const auto rbIndex = get_bits(instruction,  3, 3);
@@ -1315,13 +1366,13 @@ namespace dot::gba
 
         switch (opcode)
         {
-            case 0b00: m_BUS->write<word>(address, rd); break;
-            case 0b01: m_BUS->write<byte>(address, rd); break;
-            case 0b10: rd = m_BUS->read<word>(address); break; //TODO: halfword rotate as usual
-            case 0b11: rd = m_BUS->read<byte>(address); break;
+            case 0b00: bus->write<word>(address, rd); break;
+            case 0b01: bus->write<byte>(address, rd); break;
+            case 0b10: rd = bus->read<word>(address); break; //TODO: halfword rotate as usual
+            case 0b11: rd = bus->read<byte>(address); break;
         }
     }
-    void ARM7TDMI::load_store_sign_extended(const Instruction<word>& instruction)
+    void ARM7TDMI::load_store_sign_extended(ins16_t instruction)
     {
         const auto rdIndex = get_bits(instruction,  0, 3);
         const auto rbIndex = get_bits(instruction,  3, 3);
@@ -1340,13 +1391,13 @@ namespace dot::gba
 
         switch (opcode)
         {
-            case 0b00: m_BUS->write<word>(address, rd);                       break;
-            case 0b01: rd = m_BUS->read<word>(address);                       break; //Bits [16:31] are automatically set to 0
-            case 0b10: rd = sign_extend<int, 7> (m_BUS->read<byte>(address)); break;
-            case 0b11: rd = sign_extend<int, 15>(m_BUS->read<word>(address)); break;
+            case 0b00: bus->write<word>(address, rd);                       break;
+            case 0b01: rd = bus->read<word>(address);                       break; //Bits [16:31] are automatically set to 0
+            case 0b10: rd = sign_extend<int, 7> (bus->read<byte>(address)); break;
+            case 0b11: rd = sign_extend<int, 15>(bus->read<word>(address)); break;
         }
     }
-    void ARM7TDMI::load_store_immediate_offet(const Instruction<word>& instruction)
+    void ARM7TDMI::load_store_immediate_offet(ins16_t instruction)
     {
         const auto rdIndex = get_bits(instruction,  0, 3);
         const auto rbIndex = get_bits(instruction,  3, 3);
@@ -1367,13 +1418,13 @@ namespace dot::gba
 
         switch (opcode)
         {
-            case 0b00: m_BUS->write<word>(address, rd); break;
-            case 0b01: m_BUS->write<byte>(address, rd); break;
-            case 0b10: rd = m_BUS->read<word>(address); break;                   //TODO: READ WORD ROTATE 
-            case 0b11: rd = m_BUS->read<byte>(address); break;
+            case 0b00: bus->write<word>(address, rd); break;
+            case 0b01: bus->write<byte>(address, rd); break;
+            case 0b10: rd = bus->read<word>(address); break;                   //TODO: READ WORD ROTATE 
+            case 0b11: rd = bus->read<byte>(address); break;
         }
     }
-    void ARM7TDMI::load_store_halfword(const Instruction<word>& instruction)
+    void ARM7TDMI::load_store_halfword(ins16_t instruction)
     {
 		const auto rdIndex = get_bits(instruction,  0, 3);
 		const auto rbIndex = get_bits(instruction,  3, 3);
@@ -1386,24 +1437,24 @@ namespace dot::gba
 
 
 
-        if (lFlag) rd = m_BUS->read<word>(address);                              //TODO: rotate
-        else       m_BUS->write<word>(address, rd);
+        if (lFlag) rd = bus->read<word>(address);                              //TODO: rotate
+        else       bus->write<word>(address, rd);
     }
-    void ARM7TDMI::sp_relative_load_store(const Instruction<word>& instruction)
+    void ARM7TDMI::sp_relative_load_store(ins16_t instruction)
     {
         const auto rdIndex = get_bits(instruction, 8, 3);
         const auto word8   = get_bits(instruction, 0, 8);
         const auto lFlag   = get_bit (instruction, 11);
 
         auto& rd = m_registers[rdIndex];
-        dword address = m_registers.sr + (word8 << 2);
+        dword address = m_registers[13] + (word8 << 2);
 
 
 
-        if (lFlag) rd = m_BUS->read<word>(address);                              //TODO: rotate
-        else       m_BUS->write<word>(address, rd);
+        if (lFlag) rd = bus->read<word>(address);                              //TODO: rotate
+        else       bus->write<word>(address, rd);
     }
-    void ARM7TDMI::load_address(const Instruction<word>& instruction)
+    void ARM7TDMI::load_address(ins16_t instruction)
     {
         const auto rdIndex = get_bits(instruction, 8, 3);
         const auto word8   = get_bits(instruction, 0, 8);
@@ -1414,10 +1465,10 @@ namespace dot::gba
 
 
 
-        if (sFlag) rd = m_registers.sr + offset;
-        else       rd = (m_registers.pc & ~0x2) + offset;
+        if (sFlag) rd = m_registers[13] + offset;
+        else       rd = (m_registers[15] & ~0x2) + offset;
     }
-    void ARM7TDMI::add_offset_stack_pointer(const Instruction<word>& instruction)
+    void ARM7TDMI::add_offset_stack_pointer(ins16_t instruction)
     {
         const auto sword7 = get_bits(instruction, 0, 7);
         const auto sFlag  = get_bit (instruction, 7);
@@ -1426,16 +1477,16 @@ namespace dot::gba
 
 
 
-        if (sFlag) m_registers.sr += offset;
-        else       m_registers.sr -= offset;
+        if (sFlag) m_registers[13] += offset;
+        else       m_registers[13] -= offset;
     }
-    void ARM7TDMI::push_pop_registers(const Instruction<word>& instruction)
+    void ARM7TDMI::push_pop_registers(ins16_t instruction)
     {
         const auto registerList = get_bits(instruction,  0, 8);
         const auto lFlag        = get_bit (instruction, 11);
         const auto rFlag        = get_bit (instruction,  8);
 
-        dword address = m_registers.sr.get();
+        dword address = m_registers[13];
 
 
 		
@@ -1443,15 +1494,15 @@ namespace dot::gba
         {
             if (lFlag)
             {
-                m_registers.pc = m_BUS->read<word>(address);
-                m_registers.sr += 0x40;
+                m_registers[15] = bus->read<word>(address);
+                m_registers[13] += 0x40;
                 
                 m_pipelineTHUMB.flush();
             }
             else
             {
-                m_registers.sr -= 0x40;
-				m_BUS->write<word>(address, m_registers.pc.get());
+                m_registers[13] -= 0x40;
+				bus->write<word>(address, m_registers[15]);
             }
 
             return;
@@ -1467,20 +1518,20 @@ namespace dot::gba
             {
                 if (registerList & (0x1 << i))
                 {
-					m_registers[i] = m_BUS->read<word>(address);
+					m_registers[i] = bus->read<word>(address);
 					address += 4;
                 }
             }
 
             if (rFlag)
             {
-                m_registers.pc = m_BUS->read<word>(address) & ~0x1;
+                m_registers[15] = bus->read<word>(address) & ~0x1;
                 address += 4;
 				
                 m_pipelineTHUMB.flush();
             }
 			
-            m_registers.sr = address;
+            m_registers[13] = address;
         }
         else
         {
@@ -1490,7 +1541,7 @@ namespace dot::gba
 			}
 
             if (rFlag) address -= 4;
-            m_registers.sr = address;
+            m_registers[13] = address;
 
 			
 			
@@ -1498,15 +1549,15 @@ namespace dot::gba
 			{
                 if (registerList & (0x1 << i))
                 {
-                    m_BUS->write<word>(address, m_registers[i]);
+                    bus->write<word>(address, m_registers[i]);
                     address += 4;
                 }
 			}
 
-			if (rFlag) m_BUS->write<word>(address, m_registers.lr.get());
+			if (rFlag) bus->write<word>(address, m_registers[14]);
         }
     }
-    void ARM7TDMI::multiple_load_store(const Instruction<word>& instruction)
+    void ARM7TDMI::multiple_load_store(ins16_t instruction)
     {
 		const auto rbIndex      = get_bits(instruction,  8, 3);
 		const auto registerList = get_bits(instruction,  0, 8);
@@ -1521,13 +1572,13 @@ namespace dot::gba
         {
             if (lFlag)
             {
-				m_registers.pc = m_BUS->read<word>(address);
+				m_registers[15] = bus->read<word>(address);
 				
                 m_pipelineTHUMB.flush();
             }
             else
             {
-                m_BUS->write<word>(address, m_registers.pc.get());
+                bus->write<word>(address, m_registers[15]);
             }
 
             rb += 0x40;
@@ -1545,7 +1596,7 @@ namespace dot::gba
             {
                 if (registerList & (0x1 << i))
                 {
-					m_registers[i] = m_BUS->read<word>(address);
+					m_registers[i] = bus->read<word>(address);
                     address += 4;
                 }
             }
@@ -1570,7 +1621,7 @@ namespace dot::gba
 
             dword offset = address + (count * 4);
 
-            m_BUS->write<word>(address, m_registers[first]);
+            bus->write<word>(address, m_registers[first]);
             rb = offset;
             address += 4;
 			
@@ -1578,31 +1629,31 @@ namespace dot::gba
             {
                 if (registerList & (0x1 << i))                                 //Also big TODO: refactor this instead of flat out copying nba github
                 {
-					m_BUS->write<word>(address, m_registers[i]);
+					bus->write<word>(address, m_registers[i]);
 					address += 4;
                 }
             }
         }
     }
-    void ARM7TDMI::conditional_branch(const Instruction<word>& instruction)
+    void ARM7TDMI::conditional_branch(ins16_t instruction)
     {
         const auto soffset8 = get_bits(instruction, 0, 8);
         const auto cond     = get_bits(instruction, 8, 4);
 
         dword offset = sign_extend<int, 7>(soffset8) << 1;
-        const auto& cpsr = m_registers.get_cpsr();
+        const auto& cpsr = m_registers.cpsr();
 
 
 
 		if (!check_condition(instruction << 20, cpsr)) return;                 //The condition in this instruction is at bits [8:11] => shift to bit 31
 
-        m_registers.pc += offset;
+        m_registers[15] += offset;
         m_pipelineTHUMB.flush();
     }
-    void ARM7TDMI::software_interrupt(const Instruction<word>& instruction)
+    void ARM7TDMI::software_interrupt(ins16_t instruction)
     {
-        auto& cpsr = m_registers.get_cpsr();
-        auto& spsr = m_registers.get_spsr(OperatingMode::SVC);
+        auto& cpsr = m_registers.cpsr();
+        auto& spsr = m_registers.spsr(OperatingMode::SVC);
 
         spsr = cpsr;
 		
@@ -1610,12 +1661,12 @@ namespace dot::gba
         cpsr.set_flag(PSR::Flag::IRQ, true);
         cpsr.set_flag(PSR::Flag::Thumb, false);
 
-		m_registers.lr = m_registers.pc - 2;
-		m_registers.pc = 0x8;
+		m_registers[14] = m_registers[15] - 2;
+		m_registers[15] = 0x8;
 
 		m_pipelineTHUMB.flush();
     }
-    void ARM7TDMI::unconditional_branch(const Instruction<word>& instruction)
+    void ARM7TDMI::unconditional_branch(ins16_t instruction)
     {
         const auto offset11 = get_bits(instruction, 0, 11);
 
@@ -1623,10 +1674,10 @@ namespace dot::gba
 
 
 
-        m_registers.pc += offset;
+        m_registers[15] += offset;
         m_pipelineTHUMB.flush();
     }
-    void ARM7TDMI::long_branch_link(const Instruction<word>& instruction)
+    void ARM7TDMI::long_branch_link(ins16_t instruction)
     {
         const auto offset11 = get_bits(instruction,  0, 11);
         const auto hFlag    = get_bit (instruction, 11);
@@ -1637,16 +1688,17 @@ namespace dot::gba
 
         if (hFlag)
         {
-            const auto nextInstruction = m_registers.pc - 2;
+            const auto nextInstruction = m_registers[15] - 2;
             offset = (offset11 << 1);
 			
-            m_registers.pc = (m_registers.lr + offset) & ~0x1;
-            m_registers.lr = nextInstruction | 0x1;
+            m_registers[15] = (m_registers[14] + offset) & ~0x1;
+            m_registers[14] = nextInstruction | 0x1;
         }
         else
         {
             offset = sign_extend<int, 22>(offset11 << 12);                     //Offset MSB is at index 10, ls 12 => 22;
-            m_registers.lr = m_registers.pc + offset;
+            m_registers[14] = m_registers[15] + offset;
         }
     }
+#pragma endregion
 }

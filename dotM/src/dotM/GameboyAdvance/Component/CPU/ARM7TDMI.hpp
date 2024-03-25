@@ -2,420 +2,331 @@
 
 #include <stdafx.hpp>
 
-#include "dotM/Architecture/ARM/ARM.hpp"
-#include "dotM/Architecture/THUMB/THUMB.hpp"
+#include "dotM/Architecture/EXCEPT/VECTOR.hpp"
+#include "dotM/Architecture/LUT/ARM.hpp"
+#include "dotM/Architecture/LUT/THUMB.hpp"
 #include "dotM/GameboyAdvance/Component/BUS/BUS.hpp"
+#include "dotM/Architecture/MEMORY/MAP.hpp"
 #include "dotM/Model/Component/CPU/CPU.hpp"
+#include "dotM/GameboyAdvance/Component/BUS/IConnectable.hpp"
 
 namespace dot::gba
 {
-    class ARM7TDMI : public CPU
+    class ARM7TDMI : public CPU, public IConnectable<32>
     {
     public:
-        ARM7TDMI()  = default;
+        using ins32_t = dword;
+        using ins16_t =  word;
+		
+		enum OperatingState
+		{
+			ARM,
+			THUMB,
+		};
+		enum OperatingMode
+		{
+			USR = 0b10000,                                                         //User
+			FIQ = 0b10001,                                                         //Fast Interrupt Request
+			IRQ = 0b10010,                                                         //Interrupt Request
+			SVC = 0b10011,                                                         //Supervisor
+			ABT = 0b10111,                                                         //Abort
+			UND = 0b11011,                                                         //Undefined
+			SYS = 0b11111,                                                         //System
+		};
+		enum class OperationARM
+		{
+			DataProcessing,
+			Multiply,
+			MultiplyLong,
+			SingleDataSwap,
+			BranchExchange,
+			HalfwordDataTransferRegisterOffset,
+			HalfwordDataTransferImmediateOffset,
+			SingleDataTransfer,
+			Undefined,
+			BlockDataTransfer,
+			Branch,
+			CoprocessorDataTransfer,
+			CoprocessorDataOperation,
+			CoprocessorRegisterTransfer,
+			SoftwareInterrupt,
+		};
+		enum class OperationTHUMB
+		{
+			MoveShiftedRegister,
+			AddSubtract,
+			MoveCompareAddSubtractImmediate,
+			ALUOperations,
+			HiRegisterOperationsBranchExchange,
+			LoadPCRelative,
+			LoadStoreRegisterOffset,
+			LoadStoreSignExtended,
+			LoadStoreImmediateOffset,
+			LoadStoreHalfword,
+			LoadStoreSPRelative,
+			LoadAddress,
+			AddOffsetToStackPointer,
+			PushPopRegisters,
+			MultipleLoadStore,
+			ConditionalBranch,
+			SoftwareInterrupt,
+			UnconditionalBranch,
+			LongBranchWithLink,
+		};
+		enum class ExceptionType
+		{
+			Reset, 
+			Undefined, 
+			SoftwareInterrupt, 
+			PrefetchAbort, 
+			DataAbort, 
+			Reserved, 
+			IRQ, 
+			FIQ, 
+		};
+		enum class InterruptType
+		{
+			IRQ, 
+			FIQ, 
+		};
+		
+		struct PSR : public Register<dword>
+		{
+		public:
+			enum Flag
+			{
+				Negative = 31,                                                 //N
+				Zero = 30,												       //Z
+				Carry = 29,												       //C
+				Overflow = 28,												   //V
+
+				IRQ = 7,												       //I
+				FIQ = 6,												       //F
+				Thumb = 5,												       //T
+			};
+
+			PSR() = default;
+			virtual ~PSR() = default;
+
+
+
+			bool flag(Flag flag) const
+			{
+				return get_bit(m_value, static_cast<unsigned int>(flag));
+			}
+			void set_flag(Flag flag, bool state)
+			{
+				m_value = set_bit(m_value, static_cast<unsigned int>(flag), state);
+			}
+
+			OperatingMode mode() const
+			{
+				return static_cast<OperatingMode>(m_value & 0x1F);
+			}
+
+
+
+			PSR& operator=(const PSR& other)                                   //TODO: fix PSR and base register operators => not clean/cohesive
+			{
+				m_value = other.m_value;
+
+				return *this;
+			}
+			PSR& operator=(const dword& value)
+			{
+				m_value = value;
+
+				return *this;
+			}
+		};
+		struct Registers
+		{
+		public:
+			Registers()
+			{
+				reset();
+			}
+			~Registers() = default;
+
+			void bank(OperatingMode operatingMode)                             //Just accept it
+			{
+				const auto bank_rxp = [this](unsigned int loops, unsigned int xOffset, unsigned int pOffset)
+				{
+					for (unsigned int i = 0; i < loops; ++i) { m_rxp[i + pOffset] = m_rx.data() + i + xOffset; };
+				};
+
+
+
+				bank_rxp(16, 0, 0);                                            //Bank to USR mode => Some registers may need to be remapped to their default
+
+				switch (operatingMode)
+				{
+					case USR:                       break;                     //This operation would thus be redundant
+					case FIQ: bank_rxp(7, 16, 8); break;
+					case IRQ: bank_rxp(2, 23, 13); break;
+					case SVC: bank_rxp(2, 25, 13); break;
+					case ABT: bank_rxp(2, 27, 13); break;
+					case UND: bank_rxp(2, 29, 13); break;
+					case SYS:                       break;                     //SYS mode registers do not exist => same operation as USR mode
+
+					default:                        throw std::invalid_argument("Invalid operating mode!");
+				}
+			}
+			void reset()
+			{
+				m_rSVC[1] = m_rx[15];                                          //The PC is stored in a SVC register
+				m_rx[15] = 0x0;                                               //The PC is set to the reset vector TODO
+
+				m_spsrSVC = m_cpsr;                                            //The current CPSR is copied
+				m_cpsr = set_bits<dword>(m_cpsr, 0, 5, 0xD3);               //SVC mode, FIQ + IRQ set, T cleared
+
+				bank(m_cpsr.mode());                                           //Bank to the new mode
+			}
+
+			Register<dword>& rx(unsigned int index)
+			{
+				return m_rx[index];
+			}
+			PSR& cpsr()
+			{
+				return m_cpsr;
+			}
+			PSR& spsr(OperatingMode operatingMode)
+			{
+				switch (operatingMode)
+				{
+					case OperatingMode::FIQ: return m_spsrFIQ;
+					case OperatingMode::IRQ: return m_spsrIRQ;
+					case OperatingMode::SVC: return m_spsrSVC;
+					case OperatingMode::ABT: return m_spsrABT;
+					case OperatingMode::UND: return m_spsrUND;
+
+					default: throw std::invalid_argument("Invalid operating mode");
+				}
+			}
+
+			Register<dword>& operator[](unsigned int index)
+			{
+				return *(m_rxp[index & 0xF]);
+			}
+
+		private:
+			std::array<Register<dword>,  31> m_rx{};
+			std::array<Register<dword>*, 16> m_rxp{};
+
+			std::span<Register<dword>, 15> m_rUSR{ m_rx.begin() +  0, m_rx.begin() + 15 };
+			std::span<Register<dword>,  7> m_rFIQ{ m_rx.begin() + 15, m_rx.begin() + 22 };
+			std::span<Register<dword>,  2> m_rIRQ{ m_rx.begin() + 22, m_rx.begin() + 24 };
+			std::span<Register<dword>,  2> m_rSVC{ m_rx.begin() + 24, m_rx.begin() + 26 };
+			std::span<Register<dword>,  2> m_rABT{ m_rx.begin() + 26, m_rx.begin() + 28 };
+			std::span<Register<dword>,  2> m_rUND{ m_rx.begin() + 28, m_rx.begin() + 30 };
+
+
+
+			std::array<PSR, 6> m_srx{};
+
+			PSR& m_cpsr{ m_srx[0] };
+			PSR& m_spsrFIQ{ m_srx[1] };
+			PSR& m_spsrIRQ{ m_srx[2] };
+			PSR& m_spsrSVC{ m_srx[3] };
+			PSR& m_spsrABT{ m_srx[4] };
+			PSR& m_spsrUND{ m_srx[5] };
+		};
+		struct State
+		{
+		public:
+			State(Pipeline<ins32_t, 3>& pipelineARM, Pipeline<ins16_t, 3>& pipelineTHUMB, Registers& registers, unsigned int& cycles)
+				: pipelineARM{ pipelineARM }, pipelineTHUMB{ pipelineTHUMB }, registers{ registers }, cycles{ cycles } {}
+			~State() = default;
+
+			Pipeline<ins32_t, 3>& pipelineARM;
+			Pipeline<ins16_t, 3>& pipelineTHUMB;
+			Registers& registers;
+			unsigned int& cycles;
+		};
+		
+		ARM7TDMI();
         ~ARM7TDMI() = default;
 
         void cycle();
         void reset();
+		
+		void raise_interrupt(InterruptType type) //TODO: move to cpp
+		{
+			switch (type)
+			{
+				case InterruptType::IRQ: m_irqRequest = true; break;
+				case InterruptType::FIQ: m_fiqRequest = true; break;
 
-        void connect(std::shared_ptr<BUS<32>> bus);
+				default: throw std::invalid_argument("Invalid interrupt type");
+			}
+		}
+
+		State state();
 
     protected:
-        enum class OperatingState
-        {
-            ARM, 
-            THUMB, 
-        };
-        enum class OperatingMode
-        {
-            USR = 0b10000,                                                     //User
-            FIQ = 0b10001,                                                     //Fast Interrupt Request
-            IRQ = 0b10010,                                                     //Interrupt Request
-            SVC = 0b10011,                                                     //Supervisor
-            ABT = 0b10111,                                                     //Abort
-            UND = 0b11011,                                                     //Undefined
-            SYS = 0b11111,                                                     //System
-        };
-        enum class OperationARM
-        {
-            DataProcessing, 
-            Multiply, 
-            MultiplyLong, 
-            SingleDataSwap, 
-            BranchExchange, 
-            HalfwordDataTransferRegisterOffset, 
-            HalfwordDataTransferImmediateOffset, 
-            SingleDataTransfer, 
-            Undefined, 
-            BlockDataTransfer, 
-            Branch, 
-            CoprocessorDataTransfer, 
-            CoprocessorDataOperation, 
-            CoprocessorRegisterTransfer, 
-            SoftwareInterrupt, 
-        };
-        enum class OperationTHUMB
-        {
-            MoveShiftedRegister, 
-            AddSubtract, 
-            MoveCompareAddSubtractImmediate, 
-            ALUOperations, 
-            HiRegisterOperationsBranchExchange, 
-            LoadPCRelative, 
-            LoadStoreRegisterOffset, 
-            LoadStoreSignExtended, 
-            LoadStoreImmediateOffset, 
-            LoadStoreHalfword, 
-            LoadStoreSPRelative, 
-            LoadAddress, 
-            AddOffsetToStackPointer, 
-            PushPopRegisters, 
-            MultipleLoadStore, 
-            ConditionalBranch, 
-            SoftwareInterrupt, 
-            UnconditionalBranch, 
-            LongBranchWithLink, 
-        };
-        
-        struct PSR : public Register<dword>
-        {
-        public:
-            enum Flag
-            {
-                Negative = 31,                                                 //N
-                Zero     = 30,												   //Z
-                Carry    = 29,												   //C
-                Overflow = 28,												   //V
-                                                                               
-                IRQ      =  7,												   //I
-                FIQ      =  6,												   //F
-                Thumb    =  5,												   //T
-            };																   
-
-            PSR() = default;
-            virtual ~PSR() = default;
-
-            
-
-            bool flag(Flag flag) const
-            {
-                return get_bit(m_value, static_cast<unsigned int>(flag));
-            }
-            void set_flag(Flag flag, bool state)
-            {
-                m_value = set_bit(m_value, static_cast<unsigned int>(flag), state);
-            }
-
-            OperatingMode mode()
-            {
-                return static_cast<OperatingMode>(m_value & 0x1F);
-            }
-
-
-
-            PSR& operator=(const PSR& other)                                   //TODO: fix PSR and base register operators => not clean/cohesive
-            {
-                m_value = other.m_value;
-
-                return *this;
-            }
-            PSR& operator=(const dword& value)
-            {
-                m_value = value;
-
-                return *this;
-            }
-        };
-        struct Registers
-        {
-        public:
-            Registers() : r13 { m_rx[13] }, r14{ m_rx[14] }, r15{ m_rx[15] }
-            {
-                reset();
-            }
-            ~Registers() = default;
-
-            void bank(OperatingMode operatingMode)
-            {
-                switch (operatingMode)
-                {
-                    case OperatingMode::USR:
-                    {
-                        for (unsigned int i = 0; i < 7; ++i)
-                        {
-                            *(&r8 + i) = *(m_rx.data() + 8 + i);
-                        }
-
-                        break;
-                    }
-                    case OperatingMode::FIQ:
-                    {
-                        for (unsigned int i = 0; i < 7; ++i)
-                        {
-                            *(&r8 + i) = *(&m_r8FIQ + i);
-                        }
-
-                        break;
-                    }
-                    case OperatingMode::IRQ:
-                    {
-                        for (unsigned int i = 0; i < 2; ++i)
-                        {
-                            *(&r13 + i) = *(&m_r13IRQ + i);
-                        }
-
-                        break;
-                    }
-                    case OperatingMode::SVC:
-                    {
-                        for (unsigned int i = 0; i < 2; ++i)
-                        {
-                            *(&r13 + i) = *(&m_r13SVC + i);
-                        }
-
-                        break;
-                    }
-                    case OperatingMode::ABT:
-                    {
-                        for (unsigned int i = 0; i < 2; ++i)
-                        {
-                            *(&r13 + i) = *(&m_r13ABT + i);
-                        }
-
-                        break;
-                    }
-                    case OperatingMode::UND:
-                    {
-                        for (unsigned int i = 0; i < 2; ++i)
-                        {
-                            *(&r13 + i) = *(&m_r13UND + i);
-                        }
-
-                        break;
-                    }
-                    case OperatingMode::SYS:
-                    {
-                        for (unsigned int i = 0; i < 7; ++i)
-                        {
-                            *(&r8 + i) = *(m_rx.data() + 8 + i);
-                        }
-
-                        break;
-                    }
-
-                    default: throw std::invalid_argument("Invalid operating mode");
-                }
-            }
-            void reset()
-            {
-                const unsigned int registerCount = 16;
-
-                for (unsigned int i = 0; i < registerCount; ++i)
-                    *(&r0 + i) = m_rx[i];
-
-                m_r14SVC = pc;
-                m_spsrSVC = m_cpsr;                                           
-
-                m_cpsr = set_bits<dword>(m_cpsr, 0, 5, 0xD3);                  //SVC mode, IRQ + FIQ set, T cleared
-
-                pc = 0x0;			                                           //TODO: reset vector
-            }
-
-
-            
-            PSR& get_cpsr()
-            {
-                return m_cpsr;
-            }
-            PSR& get_spsr(OperatingMode operatingMode)
-            {
-                switch (operatingMode)
-                {
-                    case dot::gba::ARM7TDMI::OperatingMode::FIQ: return m_spsrFIQ;
-                    case dot::gba::ARM7TDMI::OperatingMode::IRQ: return m_spsrIRQ;
-                    case dot::gba::ARM7TDMI::OperatingMode::SVC: return m_spsrSVC;
-                    case dot::gba::ARM7TDMI::OperatingMode::ABT: return m_spsrABT;
-                    case dot::gba::ARM7TDMI::OperatingMode::UND: return m_spsrUND;
-
-                    default: throw std::invalid_argument("Invalid operating mode");
-                }
-            }
-            
-
-
-            //User
-            RegisterReference<dword> r0 { m_rx[ 0] };
-            RegisterReference<dword> r1 { m_rx[ 1] };
-            RegisterReference<dword> r2 { m_rx[ 2] };
-            RegisterReference<dword> r3 { m_rx[ 3] };
-            RegisterReference<dword> r4 { m_rx[ 4] };
-            RegisterReference<dword> r5 { m_rx[ 5] };
-            RegisterReference<dword> r6 { m_rx[ 6] };
-            RegisterReference<dword> r7 { m_rx[ 7] };
-
-            RegisterReference<dword> r8 { m_rx[ 8] };
-            RegisterReference<dword> r9 { m_rx[ 9] };
-            RegisterReference<dword> r10{ m_rx[10] };
-            RegisterReference<dword> r11{ m_rx[11] };
-            RegisterReference<dword> r12{ m_rx[12] };
-
-            union { RegisterReference<dword> r13; RegisterReference<dword> sr; }; //TODO: cowbite => init to default value?
-            union { RegisterReference<dword> r14; RegisterReference<dword> lr; };
-            union { RegisterReference<dword> r15; RegisterReference<dword> pc; };
-
-
-
-            Register<dword>& operator[](unsigned int index)
-            {
-                if (index > 15) throw std::out_of_range("Only general registers can be indexed!");
-
-                return *(&r0 + index);
-            }
-
-        private:
-            std::array<Register<dword>, 16> m_rx{};
-
-            //FIQ
-            Register<dword> m_r8FIQ{};
-            Register<dword> m_r9FIQ{};
-            Register<dword> m_r10FIQ{};
-            Register<dword> m_r11FIQ{};
-            Register<dword> m_r12FIQ{};
-            Register<dword> m_r13FIQ{};
-            Register<dword> m_r14FIQ{};
-
-            //IRQ
-            Register<dword> m_r13IRQ{};
-            Register<dword> m_r14IRQ{};
-
-            //SVC
-            Register<dword> m_r13SVC{};
-            Register<dword> m_r14SVC{};
-
-            //ABT
-            Register<dword> m_r13ABT{};
-            Register<dword> m_r14ABT{};
-
-            //UND
-            Register<dword> m_r13UND{};
-            Register<dword> m_r14UND{};
-
-
-
-            //Status
-            PSR m_cpsr{};
-
-            PSR m_spsrFIQ{};
-            PSR m_spsrIRQ{};
-            PSR m_spsrSVC{};
-            PSR m_spsrABT{};
-            PSR m_spsrUND{};
-        };
-        template<typename T>
-        struct Instruction
-        {
-        public:
-            Instruction() = default;
-            Instruction(const T& value) 
-                : m_value{ value } {}
-            ~Instruction() = default;
-
-            inline void clear()
-            {
-                std::memset(this, 0, sizeof(Instruction));
-            }
-            
-            
-            dword address{}; //TODO: remove later
-
-            operator T() const
-            {
-                return m_value;
-            }
-            operator T& ()
-            {
-                return m_value;
-            }
-            void operator=(const T& value)
-            {
-                m_value = value;
-            }
-            bit operator[](unsigned int index)
-            {
-                return (m_value >> index) & 0x1;
-            }
-
-        private:
-            T m_value{};
-        };
-
-
-		
 		void fetch();
 		void decode();
 		void execute();
 
-		void switch_mode(OperatingMode operatingMode);
-
+        void interrupt();                                                      //rename handle_interrupts?
+		void irq_temp();                                                       //remove
 		void exception();
 		void abort();
+		void switch_mode(OperatingMode operatingMode);
         
-        bool check_condition(const Instruction<dword>& instruction, const PSR& cpsr);
-        std::pair<dword, bit>shift_carry(dword value, ShiftType shift, dword amount, bit carryFlag = false);
+        bool check_condition(ins32_t instruction, const PSR& cpsr);
+        std::pair<dword, bool>shift_carry(dword value, ShiftType shift, dword amount, bool carryFlag = false);
+
+#pragma region ARM INSTRUCTIONS
+        void data_processing                        (ins32_t instruction);
+        void psr_transfer                           (ins32_t instruction);
+        void multiply                               (ins32_t instruction);
+        void multiply_long                          (ins32_t instruction);
+        void single_data_swap                       (ins32_t instruction);
+        void branch_exchange                        (ins32_t instruction);
+        void halfword_data_transfer                 (ins32_t instruction);
+        void single_data_transfer                   (ins32_t instruction);
+        void undefined                              (ins32_t instruction);
+        void block_data_transfer                    (ins32_t instruction);
+        void branch                                 (ins32_t instruction);
+        void coprocessor_data_transfer              (ins32_t instruction);
+        void coprocessor_data_operation             (ins32_t instruction);
+        void coprocessor_register_transfer          (ins32_t instruction);
+        void software_interrupt                     (ins32_t instruction);
+#pragma endregion
+#pragma region THUMB INSTRUCTIONS
+        void move_shifted_register                  (ins16_t instruction);
+        void add_subtract                           (ins16_t instruction);
+        void move_compare_add_subtract_immediate    (ins16_t instruction);
+        void alu_operations                         (ins16_t instruction);
+        void hi_register_operations__branch_exchange(ins16_t instruction);
+        void pc_relative_load                       (ins16_t instruction);
+        void load_store_register_offset             (ins16_t instruction);
+        void load_store_sign_extended               (ins16_t instruction);
+        void load_store_immediate_offet             (ins16_t instruction);
+        void load_store_halfword                    (ins16_t instruction);
+        void sp_relative_load_store                 (ins16_t instruction);
+        void load_address                           (ins16_t instruction);
+        void add_offset_stack_pointer               (ins16_t instruction);
+        void push_pop_registers                     (ins16_t instruction);
+        void multiple_load_store                    (ins16_t instruction);
+        void conditional_branch                     (ins16_t instruction);
+        void software_interrupt                     (ins16_t instruction);
+        void unconditional_branch                   (ins16_t instruction);
+        void long_branch_link                       (ins16_t instruction);
+#pragma endregion
+
+        Pipeline<ins32_t, 3> m_pipelineARM{};
+        Pipeline<ins16_t, 3> m_pipelineTHUMB{};
         
-
-        
-        //ARM Instructions
-        void data_processing                        (const Instruction<dword>& instruction);
-        void psr_transfer                           (const Instruction<dword>& instruction);
-        void multiply                               (const Instruction<dword>& instruction);
-        void multiply_long                          (const Instruction<dword>& instruction);
-        void single_data_swap                       (const Instruction<dword>& instruction);
-        void branch_exchange                        (const Instruction<dword>& instruction);
-        void halfword_data_transfer                 (const Instruction<dword>& instruction);
-        void single_data_transfer                   (const Instruction<dword>& instruction);
-        void undefined                              (const Instruction<dword>& instruction);
-        void block_data_transfer                    (const Instruction<dword>& instruction);
-        void branch                                 (const Instruction<dword>& instruction);
-        void coprocessor_data_transfer              (const Instruction<dword>& instruction);
-        void coprocessor_data_operation             (const Instruction<dword>& instruction);
-        void coprocessor_register_transfer          (const Instruction<dword>& instruction);
-        void software_interrupt                     (const Instruction<dword>& instruction);
-
-
-
-        //THUMB Instructions
-        void move_shifted_register                  (const Instruction<word>& instruction);
-        void add_subtract                           (const Instruction<word>& instruction);
-        void move_compare_add_subtract_immediate    (const Instruction<word>& instruction);
-        void alu_operations                         (const Instruction<word>& instruction);
-        void hi_register_operations__branch_exchange(const Instruction<word>& instruction);
-        void pc_relative_load                       (const Instruction<word>& instruction);
-        void load_store_register_offset             (const Instruction<word>& instruction);
-        void load_store_sign_extended               (const Instruction<word>& instruction);
-        void load_store_immediate_offet             (const Instruction<word>& instruction);
-        void load_store_halfword                    (const Instruction<word>& instruction);
-        void sp_relative_load_store                 (const Instruction<word>& instruction);
-        void load_address                           (const Instruction<word>& instruction);
-        void add_offset_stack_pointer               (const Instruction<word>& instruction);
-        void push_pop_registers                     (const Instruction<word>& instruction);
-        void multiple_load_store                    (const Instruction<word>& instruction);
-        void conditional_branch                     (const Instruction<word>& instruction);
-        void software_interrupt                     (const Instruction<word>& instruction);
-        void unconditional_branch                   (const Instruction<word>& instruction);
-        void long_branch_link                       (const Instruction<word>& instruction);
-        
-
-
-        Pipeline<Instruction<dword>, 3> m_pipelineARM{};
-        Pipeline<Instruction<word>, 3> m_pipelineTHUMB{};
-        
-        Registers m_registers{};                                               
+        Registers m_registers{};
         OperationARM m_operationARM{};                                         
         OperationTHUMB m_operationTHUMB{};
 
-        std::shared_ptr<BUS<32>> m_BUS;
-
         unsigned int m_cycles{};
+		bool m_irqRequest{};
+		bool m_fiqRequest{};
+		bool m_halted{};
     };
 }
