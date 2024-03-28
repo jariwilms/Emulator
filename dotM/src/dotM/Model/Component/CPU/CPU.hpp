@@ -127,7 +127,7 @@ namespace dot
 			}
 			void flush()
 			{
-				static_assert(std::is_default_constructible<T>::value, "Type must be default constructible");
+				static_assert(std::is_default_constructible<T>::value, "Type must be default constructible!");
 
 				std::fill(m_elements.begin(), m_elements.end(), T{});
 				std::fill(m_addresses.begin(), m_addresses.end(), T{});

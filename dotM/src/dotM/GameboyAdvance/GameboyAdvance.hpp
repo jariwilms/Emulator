@@ -49,11 +49,11 @@ namespace dot::gba
 			static Cartridge create(const std::vector<byte>& data)
 			{
 				Cartridge cartridge{};
-				const auto cartridgeSize = cartridge.size();
+				const auto cartridgeCapacity = cartridge.capacity();
 				const auto dataSize = data.size();
 				auto sizeLeft = dataSize;
 
-				if (dataSize > cartridgeSize) throw std::runtime_error("Cartridge data is too large.");
+				if (dataSize > cartridgeCapacity) throw std::runtime_error("Cartridge data is too large.");
 
 
 
@@ -74,7 +74,7 @@ namespace dot::gba
 				return cartridge;
 			}
 
-			size_t size() const
+			size_t capacity() const
 			{
 				return cart0->size() + cart1->size() + cart2->size() + cartS->size();
 			}
@@ -87,8 +87,6 @@ namespace dot::gba
 
 		GameboyAdvance();
 		virtual ~GameboyAdvance() = default;
-
-
 
 		virtual void on();
 		virtual void off();
