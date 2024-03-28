@@ -85,7 +85,9 @@ namespace dot::gba
 
 	void GameboyAdvance::boot()
 	{
-		auto biosFile = read_file(BIOS_LOC);
+		const auto& biosFile = read_file(BIOS_LOC);
+		if (biosFile.size() > m_bios->size()) throw std::invalid_argument{ "The given BIOS file is too large!" };
+
 		std::memcpy(m_bios->data(BIOSADDR0), biosFile.data(), biosFile.size());
 
 		m_running = true;
@@ -98,7 +100,7 @@ namespace dot::gba
 		static DeltaTime deltaTime{ 0 };
 		static clock::time_point t0{};
 		static clock::time_point t1{};
-		const auto scanlineDelta = 59.73 / 60.0;
+		constexpr auto scanlineDelta = 59.73f / 60.0f;
 
 
 		
