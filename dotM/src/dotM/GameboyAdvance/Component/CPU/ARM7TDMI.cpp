@@ -24,9 +24,7 @@ namespace dot::gba
     }
     void ARM7TDMI::reset()
     {
-        m_pipelineARM.flush();                                                 //Remove all instructions present in the pipeline
-        m_pipelineTHUMB.flush();
-
+        m_pipeline.flush();                                                    //Remove all instructions present in the pipeline
         m_registers.reset();                                                   //All registers are set to 0, some values are adjusted based on reset specification
     }
 
@@ -43,53 +41,43 @@ namespace dot::gba
 
     ARM7TDMI::State ARM7TDMI::state()
 	{
-		return State{ m_pipelineARM, m_pipelineTHUMB, m_registers, m_cycles };
+		return State{ m_pipeline, m_registers, m_cycles };
 	}
 
     void ARM7TDMI::fetch()
     {
         const auto& cpsr = m_registers.cpsr();
-        dword address{};
-
-		
-
         const auto thumbFlag = cpsr.flag(PSR::Flag::Thumb);
+
+        ins32_t instruction{};
+        dword address{};
 		
+
+
         if (thumbFlag)
         {
-            ins16_t instruction{};
             static dword value{};
 
-            address = m_registers[15] & ~0x1;                                  //0xFFFFFFFE, 2 byte alignment
             const auto& fetch = m_registers[15][1];                            //Only fetch if the "2" bit is not set
+            address = m_registers[15] & ~0x1;                                  //0xFFFFFFFE, 2 byte alignment
 
-            if (fetch)                                                         
-            {
-                value = bus->read<dword>(address);
-                instruction = static_cast<word>(value);
-            }
-            else
-            {
-                instruction = static_cast<word>(value >> 16);
-            }
+            if (fetch) value = bus->read<dword>(address);
+            else       value >>= 16;
 
-            m_pipelineTHUMB.push(instruction, address);
-            m_pipelineTHUMB.shift();
+            instruction = static_cast<ins16_t>(value);
 			
-            m_registers[15] += 2;
+            m_registers[15] += 2;                                              //Move instruction pointer 2 bytes forward
         }
         else
         {
-            ins32_t instruction{};
-
             address = m_registers[15] & ~0x3;                                  //0xFFFFFFFC, 4 byte alignment
             instruction = bus->read<dword>(address);
-
-            m_pipelineARM.push(instruction, address);
-            m_pipelineARM.shift();
 			
             m_registers[15] += 4;
         }
+
+        m_pipeline.push(instruction, address);
+        m_pipeline.shift();
     }
     void ARM7TDMI::decode()
     {
@@ -97,17 +85,16 @@ namespace dot::gba
         const auto tFlag = cpsr.flag(PSR::Flag::Thumb);
 
 
+        if (m_pipeline.load() < 2) return;
+        const auto& [instruction, address] = m_pipeline[1];
+
 
         if (tFlag)
         {
-            if (m_pipelineTHUMB.load() < 2) return;
-
-            const auto& [instruction, address] = m_pipelineTHUMB[1];
-
 			for (int i = arc::THUMB_FORMAT_COUNT - 1; i >= 0; --i)
 			{
-				const auto mask = instruction & arc::THUMB_INSTRUCTION_MASK[i];
-				const bool match = (mask == arc::THUMB_INSTRUCTION_FORMAT[i]);
+                const auto& mask  = instruction & arc::THUMB_INSTRUCTION_MASK[i];
+                const bool& match = (mask == arc::THUMB_INSTRUCTION_FORMAT[i]);
 
 				if (match)
 				{
@@ -119,14 +106,10 @@ namespace dot::gba
         }
         else
         {
-            if (m_pipelineARM.load() < 2) return;
-
-			const auto& [instruction, address] = m_pipelineARM[1];
-
 			for (int i = arc::ARM_FORMAT_COUNT - 1; i >= 0; --i)
 			{
-				const auto mask = instruction & arc::ARM_INSTRUCTION_MASK[i];
-				const bool match = (mask == arc::ARM_INSTRUCTION_FORMAT[i]);
+				const auto& mask = instruction & arc::ARM_INSTRUCTION_MASK[i];
+				const bool& match = (mask == arc::ARM_INSTRUCTION_FORMAT[i]);
 
 				if (match)
 				{
@@ -144,16 +127,12 @@ namespace dot::gba
         const auto& cpsr = m_registers.cpsr();
         const auto tFlag = cpsr.flag(PSR::Flag::Thumb);
         
+        if (m_pipeline.load() < 3) return; //TODO: move outside of execute? This method should literally only execute
 
+        const auto& [instruction, address] = m_pipeline[2];
 
         if (tFlag)
 		{
-            if (m_pipelineTHUMB.load() < 3) return;
-
-            const auto& [instruction, address] = m_pipelineTHUMB[2];
-
-
-
 #if _DEBUG
 			const std::unordered_map<OperationTHUMB, const char*> operationToInstructionName
 			{
@@ -209,13 +188,11 @@ namespace dot::gba
 				{ OperationTHUMB::LongBranchWithLink,                 &ARM7TDMI::long_branch_link }, 
 			};
 
-			std::invoke(operationToInstruction.at(m_operationTHUMB), this, instruction);
+			std::invoke(operationToInstruction.at(m_operationTHUMB), this, static_cast<ins16_t>(instruction));
         }
         else
         {
-            if (m_pipelineARM.load() < 3) return;
-
-			const auto& [instruction, address] = m_pipelineARM[2];
+			const auto& [instruction, address] = m_pipeline[2];
 
             if (!check_condition(instruction, cpsr))
             {
@@ -320,7 +297,7 @@ namespace dot::gba
         }
 
         m_registers[15] = VEC_IRQ;
-        m_pipelineARM.flush();
+        m_pipeline.flush();
     }
     void ARM7TDMI::exception()
     {
@@ -619,8 +596,7 @@ namespace dot::gba
                 {
                     const auto tFlag = cpsr.flag(PSR::Flag::Thumb);
 					
-                    if (tFlag) m_pipelineTHUMB.flush();
-                    else       m_pipelineARM.flush();
+                    m_pipeline.flush();
                 }
             }
             else
@@ -749,7 +725,7 @@ namespace dot::gba
             cpsr.set(PSR::Flag::Overflow, false);
         }
 
-        if (rdIndex == 15) m_pipelineARM.flush();
+        if (rdIndex == 15) m_pipeline.flush();
     }	
     void ARM7TDMI::multiply_long(ins32_t instruction)
     {
@@ -791,7 +767,7 @@ namespace dot::gba
             cpsr.set(PSR::Flag::Overflow, false);
         }
 
-        if (rdhiIndex == 15 || rdloIndex == 15) m_pipelineARM.flush();
+        if (rdhiIndex == 15 || rdloIndex == 15) m_pipeline.flush();
     }
     void ARM7TDMI::single_data_swap(ins32_t instruction)
     {
@@ -824,7 +800,7 @@ namespace dot::gba
 
 
 		
-        if (rdIndex == 15) m_pipelineARM.flush();
+        if (rdIndex == 15) m_pipeline.flush();
     }
     void ARM7TDMI::branch_exchange(ins32_t instruction)
     {
@@ -836,17 +812,11 @@ namespace dot::gba
 
 		const auto tFlag = get_bit(rn, 0);
 
-        if (tFlag)
-        {
-			m_registers[15] = rn & ~0x1;
-            m_pipelineTHUMB.flush();
-        }
-        else
-        {
-            m_registers[15] = rn & ~0x3;
-            m_pipelineARM.flush();
-        }
+        if (tFlag) m_registers[15] = rn & ~0x1;
+        else       m_registers[15] = rn & ~0x3;
 		
+        m_pipeline.flush();
+
 
 		
 		auto& cpsr = m_registers.cpsr();
@@ -913,7 +883,7 @@ namespace dot::gba
 		
 		
         if (!pFlag && wFlag)        rn += offset;
-        if (lFlag && rdIndex == 15) m_pipelineARM.flush();
+        if (lFlag && rdIndex == 15) m_pipeline.flush();
     }
     void ARM7TDMI::single_data_transfer(ins32_t instruction)
     {
@@ -973,7 +943,7 @@ namespace dot::gba
 				rd = (value >> rotate) | (value << (32 - rotate));             //Rotate the value to the correct position in case of unaligned access
 			}
 
-            if (rdIndex == 15) m_pipelineARM.flush();
+            if (rdIndex == 15) m_pipeline.flush();
         }
         else
         {
@@ -996,7 +966,7 @@ namespace dot::gba
 
         
         if (!pFlag && wFlag) rn += offset12;
-        if (lFlag && rdIndex == 15) m_pipelineARM.flush();
+        if (lFlag && rdIndex == 15) m_pipeline.flush();
     }
     void ARM7TDMI::undefined(ins32_t instruction)
     {
@@ -1015,7 +985,7 @@ namespace dot::gba
         m_registers[14] = m_registers[15] - 4;
         m_registers[15] = VEC_UNDEFINED;
 		
-        m_pipelineARM.flush();
+        m_pipeline.flush();
     }
     void ARM7TDMI::block_data_transfer(ins32_t instruction)
     {
@@ -1123,7 +1093,7 @@ namespace dot::gba
             m_registers[15] += offset;
         }
 
-        m_pipelineARM.flush();
+        m_pipeline.flush();
     }
     void ARM7TDMI::coprocessor_data_transfer(ins32_t instruction)
     {
@@ -1154,7 +1124,7 @@ namespace dot::gba
 		m_registers[14] = m_registers[15] - 4;
 		m_registers[15] = VEC_SOFTWARE_INTERRUPT;
 
-		m_pipelineARM.flush();
+		m_pipeline.flush();
     }
 #pragma endregion
 #pragma region THUMB INSTRUCTIONS
@@ -1324,18 +1294,14 @@ namespace dot::gba
             case 0b10: rd = rs; break;                                         //MOV
 			case 0b11:                                                         //BX
 			{
-                const auto tFlag = get_bit(rs, 0);
+                const auto& tFlag = get_bit(rs, 0);
 
-                if (tFlag)
-                {
-                    m_registers[15] = rs & ~0x1;
-                    m_pipelineTHUMB.flush();
-                }
-                else
-                {
-                    m_registers[15] = rs & ~0x3;
-                    m_pipelineARM.flush();
-                }
+                if (tFlag) m_registers[15] = rs & ~0x1;
+                else       m_registers[15] = rs & ~0x3;
+
+                m_pipeline.flush();
+
+
 
 				cpsr.set(PSR::Flag::Thumb, tFlag);
 
@@ -1508,7 +1474,7 @@ namespace dot::gba
                 m_registers[15] = bus->read<word>(address);
                 m_registers[13] += 0x40;
                 
-                m_pipelineTHUMB.flush();
+                m_pipeline.flush();
             }
             else
             {
@@ -1539,7 +1505,7 @@ namespace dot::gba
                 m_registers[15] = bus->read<word>(address) & ~0x1;
                 address += 4;
 				
-                m_pipelineTHUMB.flush();
+                m_pipeline.flush();
             }
 			
             m_registers[13] = address;
@@ -1585,7 +1551,7 @@ namespace dot::gba
             {
 				m_registers[15] = bus->read<word>(address);
 				
-                m_pipelineTHUMB.flush();
+                m_pipeline.flush();
             }
             else
             {
@@ -1659,7 +1625,7 @@ namespace dot::gba
 		if (!check_condition(instruction << 20, cpsr)) return;                 //The condition in this instruction is at bits [8:11] => shift to bit 31
 
         m_registers[15] += offset;
-        m_pipelineTHUMB.flush();
+        m_pipeline.flush();
     }
     void ARM7TDMI::software_interrupt(ins16_t instruction)
     {
@@ -1675,7 +1641,7 @@ namespace dot::gba
 		m_registers[14] = m_registers[15] - 2;
 		m_registers[15] = 0x8;
 
-		m_pipelineTHUMB.flush();
+		m_pipeline.flush();
     }
     void ARM7TDMI::unconditional_branch(ins16_t instruction)
     {
@@ -1686,7 +1652,7 @@ namespace dot::gba
 
 
         m_registers[15] += offset;
-        m_pipelineTHUMB.flush();
+        m_pipeline.flush();
     }
     void ARM7TDMI::long_branch_link(ins16_t instruction)
     {

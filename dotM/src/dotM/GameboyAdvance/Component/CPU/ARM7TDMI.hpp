@@ -197,12 +197,11 @@ namespace dot::gba
 		struct State
 		{
 		public:
-			State(const Pipeline<ins32_t, 3>& pipelineARM, const Pipeline<ins16_t, 3>& pipelineTHUMB, const Registers& registers, unsigned int cycles)
-				: pipelineARM{ pipelineARM }, pipelineTHUMB{ pipelineTHUMB }, registers{ registers }, cycles{ cycles } {}
+			State(const Pipeline<ins32_t, 3>& pipeline, const Registers& registers, unsigned int cycles)
+				: pipeline{ pipeline }, registers{ registers }, cycles{ cycles } {}
 			~State() = default;
 
-			const Pipeline<ins32_t, 3>& pipelineARM;
-			const Pipeline<ins16_t, 3>& pipelineTHUMB;
+			const Pipeline<ins32_t, 3>& pipeline;
 			const Registers& registers;
 			const unsigned int& cycles;
 		};
@@ -311,8 +310,7 @@ namespace dot::gba
         void long_branch_link                       (ins16_t instruction);
 #pragma endregion
 
-        Pipeline<ins32_t, 3> m_pipelineARM{};
-        Pipeline<ins16_t, 3> m_pipelineTHUMB{};
+        Pipeline<ins32_t, 3> m_pipeline{};
         
         Registers m_registers{};
         OperationARM m_operationARM{};                                         
