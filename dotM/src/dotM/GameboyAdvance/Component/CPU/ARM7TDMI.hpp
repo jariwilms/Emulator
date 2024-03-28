@@ -25,53 +25,13 @@ namespace dot::gba
 		};
 		enum OperatingMode
 		{
-			USR = 0b10000,                                                         //User
-			FIQ = 0b10001,                                                         //Fast Interrupt Request
-			IRQ = 0b10010,                                                         //Interrupt Request
-			SVC = 0b10011,                                                         //Supervisor
-			ABT = 0b10111,                                                         //Abort
-			UND = 0b11011,                                                         //Undefined
-			SYS = 0b11111,                                                         //System
-		};
-		enum class OperationARM
-		{
-			DataProcessing,
-			Multiply,
-			MultiplyLong,
-			SingleDataSwap,
-			BranchExchange,
-			HalfwordDataTransferRegisterOffset,
-			HalfwordDataTransferImmediateOffset,
-			SingleDataTransfer,
-			Undefined,
-			BlockDataTransfer,
-			Branch,
-			CoprocessorDataTransfer,
-			CoprocessorDataOperation,
-			CoprocessorRegisterTransfer,
-			SoftwareInterrupt,
-		};
-		enum class OperationTHUMB
-		{
-			MoveShiftedRegister,
-			AddSubtract,
-			MoveCompareAddSubtractImmediate,
-			ALUOperations,
-			HiRegisterOperationsBranchExchange,
-			LoadPCRelative,
-			LoadStoreRegisterOffset,
-			LoadStoreSignExtended,
-			LoadStoreImmediateOffset,
-			LoadStoreHalfword,
-			LoadStoreSPRelative,
-			LoadAddress,
-			AddOffsetToStackPointer,
-			PushPopRegisters,
-			MultipleLoadStore,
-			ConditionalBranch,
-			SoftwareInterrupt,
-			UnconditionalBranch,
-			LongBranchWithLink,
+			USR = 0b10000,                                                     //User
+			FIQ = 0b10001,                                                     //Fast Interrupt Request
+			IRQ = 0b10010,                                                     //Interrupt Request
+			SVC = 0b10011,                                                     //Supervisor
+			ABT = 0b10111,                                                     //Abort
+			UND = 0b11011,                                                     //Undefined
+			SYS = 0b11111,                                                     //System
 		};
 		enum class ExceptionType
 		{
@@ -96,13 +56,13 @@ namespace dot::gba
 			enum Flag
 			{
 				Negative = 31,                                                 //N
-				Zero = 30,												       //Z
-				Carry = 29,												       //C
+				Zero     = 30,												   //Z
+				Carry    = 29,												   //C
 				Overflow = 28,												   //V
 
-				IRQ = 7,												       //I
-				FIQ = 6,												       //F
-				Thumb = 5,												       //T
+				IRQ      = 7,												   //I
+				FIQ      = 6,												   //F
+				Thumb    = 5,												   //T
 			};
 
 			PSR() = default;
@@ -114,7 +74,7 @@ namespace dot::gba
 			{
 				return get_bit(m_value, static_cast<unsigned int>(flag));
 			}
-			void set_flag(Flag flag, bool state)
+			void set(Flag flag, bool state)
 			{
 				m_value = set_bit(m_value, static_cast<unsigned int>(flag), state);
 			}
@@ -175,10 +135,10 @@ namespace dot::gba
 			void reset()
 			{
 				m_rSVC[1] = m_rx[15];                                          //The PC is stored in a SVC register
-				m_rx[15] = 0x0;                                               //The PC is set to the reset vector TODO
+				m_rx[15]  = 0x0;                                               //The PC is set to the reset vector TODO
 
 				m_spsrSVC = m_cpsr;                                            //The current CPSR is copied
-				m_cpsr = set_bits<dword>(m_cpsr, 0, 5, 0xD3);               //SVC mode, FIQ + IRQ set, T cleared
+				m_cpsr    = set_bits<dword>(m_cpsr, 0, 5, 0xD3);               //SVC mode, FIQ + IRQ set, T cleared
 
 				bank(m_cpsr.mode());                                           //Bank to the new mode
 			}
@@ -214,6 +174,7 @@ namespace dot::gba
 			std::array<Register<dword>,  31> m_rx{};
 			std::array<Register<dword>*, 16> m_rxp{};
 
+			//Helper declarations
 			std::span<Register<dword>, 15> m_rUSR{ m_rx.begin() +  0, m_rx.begin() + 15 };
 			std::span<Register<dword>,  7> m_rFIQ{ m_rx.begin() + 15, m_rx.begin() + 22 };
 			std::span<Register<dword>,  2> m_rIRQ{ m_rx.begin() + 22, m_rx.begin() + 24 };
@@ -225,6 +186,7 @@ namespace dot::gba
 
 			std::array<PSR, 6> m_srx{};
 
+			//Helper declarations
 			PSR& m_cpsr{ m_srx[0] };
 			PSR& m_spsrFIQ{ m_srx[1] };
 			PSR& m_spsrIRQ{ m_srx[2] };
@@ -235,14 +197,14 @@ namespace dot::gba
 		struct State
 		{
 		public:
-			State(Pipeline<ins32_t, 3>& pipelineARM, Pipeline<ins16_t, 3>& pipelineTHUMB, Registers& registers, unsigned int& cycles)
+			State(const Pipeline<ins32_t, 3>& pipelineARM, const Pipeline<ins16_t, 3>& pipelineTHUMB, const Registers& registers, unsigned int cycles)
 				: pipelineARM{ pipelineARM }, pipelineTHUMB{ pipelineTHUMB }, registers{ registers }, cycles{ cycles } {}
 			~State() = default;
 
-			Pipeline<ins32_t, 3>& pipelineARM;
-			Pipeline<ins16_t, 3>& pipelineTHUMB;
-			Registers& registers;
-			unsigned int& cycles;
+			const Pipeline<ins32_t, 3>& pipelineARM;
+			const Pipeline<ins16_t, 3>& pipelineTHUMB;
+			const Registers& registers;
+			const unsigned int& cycles;
 		};
 		
 		ARM7TDMI();
@@ -251,20 +213,52 @@ namespace dot::gba
         void cycle();
         void reset();
 		
-		void raise_interrupt(InterruptType type) //TODO: move to cpp
-		{
-			switch (type)
-			{
-				case InterruptType::IRQ: m_irqRequest = true; break;
-				case InterruptType::FIQ: m_fiqRequest = true; break;
-
-				default: throw std::invalid_argument("Invalid interrupt type");
-			}
-		}
+		void raise_interrupt(InterruptType type);
 
 		State state();
 
     protected:
+        enum class OperationARM
+        {
+            DataProcessing,
+            Multiply,
+            MultiplyLong,
+            SingleDataSwap,
+            BranchExchange,
+            HalfwordDataTransferRegisterOffset,
+            HalfwordDataTransferImmediateOffset,
+            SingleDataTransfer,
+            Undefined,
+            BlockDataTransfer,
+            Branch,
+            CoprocessorDataTransfer,
+            CoprocessorDataOperation,
+            CoprocessorRegisterTransfer,
+            SoftwareInterrupt,
+        };
+        enum class OperationTHUMB
+        {
+            MoveShiftedRegister,
+            AddSubtract,
+            MoveCompareAddSubtractImmediate,
+            ALUOperations,
+            HiRegisterOperationsBranchExchange,
+            LoadPCRelative,
+            LoadStoreRegisterOffset,
+            LoadStoreSignExtended,
+            LoadStoreImmediateOffset,
+            LoadStoreHalfword,
+            LoadStoreSPRelative,
+            LoadAddress,
+            AddOffsetToStackPointer,
+            PushPopRegisters,
+            MultipleLoadStore,
+            ConditionalBranch,
+            SoftwareInterrupt,
+            UnconditionalBranch,
+            LongBranchWithLink,
+        };
+
 		void fetch();
 		void decode();
 		void execute();

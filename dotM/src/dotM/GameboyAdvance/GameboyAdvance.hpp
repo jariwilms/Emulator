@@ -86,6 +86,7 @@ namespace dot::gba
 		};
 
 		GameboyAdvance();
+		GameboyAdvance(const GameboyAdvance&) = delete;
 		virtual ~GameboyAdvance() = default;
 
 		virtual void on();
@@ -94,6 +95,8 @@ namespace dot::gba
 
 		virtual void slot(const Cartridge& cartridge);
 		virtual void unslot();
+
+		GameboyAdvance& operator=(const GameboyAdvance&) = delete;
 
     protected:
 		virtual void boot();

@@ -30,6 +30,17 @@ namespace dot::gba
         m_registers.reset();                                                   //All registers are set to 0, some values are adjusted based on reset specification
     }
 
+    void ARM7TDMI::raise_interrupt(InterruptType type)
+    {
+        switch (type)
+        {
+            case InterruptType::IRQ: m_irqRequest = true; break;
+            case InterruptType::FIQ: m_fiqRequest = true; break;
+
+            default: throw std::invalid_argument("Invalid interrupt type");
+        }
+    }
+
     ARM7TDMI::State ARM7TDMI::state()
 	{
 		return State{ m_pipelineARM, m_pipelineTHUMB, m_registers, m_cycles };
@@ -42,15 +53,15 @@ namespace dot::gba
 
 		
 
-        const auto tFlag = cpsr.flag(PSR::Flag::Thumb);
+        const auto thumbFlag = cpsr.flag(PSR::Flag::Thumb);
 		
-        if (tFlag)
+        if (thumbFlag)
         {
             ins16_t instruction{};
             static dword value{};
 
             address = m_registers[15] & ~0x1;                                  //0xFFFFFFFE, 2 byte alignment
-            const auto fetch = m_registers[15][1];                             //Only fetch if the "2" bit is not set
+            const auto& fetch = m_registers[15][1];                            //Only fetch if the "2" bit is not set
 
             if (fetch)                                                         
             {
@@ -295,12 +306,12 @@ namespace dot::gba
 
 		
         switch_mode(OperatingMode::IRQ);
-        cpsr.set_flag(PSR::Flag::IRQ, true);                                   //Disable further IRQ's
+        cpsr.set(PSR::Flag::IRQ, true);                                        //Disable further IRQ's
         spsr = cpsr;
 
         if (tFlag)
         {
-            cpsr.set_flag(PSR::Flag::Thumb, false);
+            cpsr.set(PSR::Flag::Thumb, false);
             m_registers[14] = m_registers[15];
         }
         else
@@ -616,9 +627,9 @@ namespace dot::gba
             {
 				const auto functionType = opcodeToFunctionType.at(opcode);
 
-                cpsr.set_flag(PSR::Flag::Negative, result[31]);  
-                cpsr.set_flag(PSR::Flag::Zero,     result == 0); 
-                cpsr.set_flag(PSR::Flag::Carry,    carry);       
+                cpsr.set(PSR::Flag::Negative, result[31]);  
+                cpsr.set(PSR::Flag::Zero,     result == 0); 
+                cpsr.set(PSR::Flag::Carry,    carry);       
 
                 if (functionType == FunctionType::Arithmetic)                          
                 {
@@ -627,7 +638,7 @@ namespace dot::gba
                     const auto signResult = result[31];                        //(i.e. the sign of the result is different from the signs of the operands)
 
                     const auto v = ((signRn == signOp2) && (signResult != signRn));
-                    cpsr.set_flag(PSR::Flag::Overflow, v);
+                    cpsr.set(PSR::Flag::Overflow, v);
                 }
             }
         }
@@ -732,10 +743,10 @@ namespace dot::gba
         {
             auto& cpsr = m_registers.cpsr();
 			
-            cpsr.set_flag(PSR::Flag::Negative, rd[31]);          
-            cpsr.set_flag(PSR::Flag::Zero,     rd == 0);         
-            cpsr.set_flag(PSR::Flag::Carry,    false);
-            cpsr.set_flag(PSR::Flag::Overflow, false);
+            cpsr.set(PSR::Flag::Negative, rd[31]);          
+            cpsr.set(PSR::Flag::Zero,     rd == 0);         
+            cpsr.set(PSR::Flag::Carry,    false);
+            cpsr.set(PSR::Flag::Overflow, false);
         }
 
         if (rdIndex == 15) m_pipelineARM.flush();
@@ -774,10 +785,10 @@ namespace dot::gba
             auto& cpsr = m_registers.cpsr();
             const auto z = (rdhi == 0) && (rdlo == 0);
 
-            cpsr.set_flag(PSR::Flag::Negative, rdhi[31]);
-            cpsr.set_flag(PSR::Flag::Zero,     z);
-            cpsr.set_flag(PSR::Flag::Carry,    false);
-            cpsr.set_flag(PSR::Flag::Overflow, false);
+            cpsr.set(PSR::Flag::Negative, rdhi[31]);
+            cpsr.set(PSR::Flag::Zero,     z);
+            cpsr.set(PSR::Flag::Carry,    false);
+            cpsr.set(PSR::Flag::Overflow, false);
         }
 
         if (rdhiIndex == 15 || rdloIndex == 15) m_pipelineARM.flush();
@@ -839,7 +850,7 @@ namespace dot::gba
 
 		
 		auto& cpsr = m_registers.cpsr();
-        cpsr.set_flag(PSR::Flag::Thumb, tFlag);
+        cpsr.set(PSR::Flag::Thumb, tFlag);
     }
     void ARM7TDMI::halfword_data_transfer(ins32_t instruction)
     {
@@ -999,7 +1010,7 @@ namespace dot::gba
         spsr = cpsr;
 		
 		switch_mode(OperatingMode::UND);
-        cpsr.set_flag(PSR::Flag::IRQ, true);
+        cpsr.set(PSR::Flag::IRQ, true);
 
         m_registers[14] = m_registers[15] - 4;
         m_registers[15] = VEC_UNDEFINED;
@@ -1138,7 +1149,7 @@ namespace dot::gba
 		spsr = cpsr;
 		
 		switch_mode(OperatingMode::SVC);
-		cpsr.set_flag(PSR::Flag::IRQ, true);
+		cpsr.set(PSR::Flag::IRQ, true);
 
 		m_registers[14] = m_registers[15] - 4;
 		m_registers[15] = VEC_SOFTWARE_INTERRUPT;
@@ -1167,9 +1178,9 @@ namespace dot::gba
 
 
 
-		cpsr.set_flag(PSR::Flag::Negative, rd[31]);
-        cpsr.set_flag(PSR::Flag::Zero,     rd == 0);
-        cpsr.set_flag(PSR::Flag::Carry,    carry);
+		cpsr.set(PSR::Flag::Negative, rd[31]);
+        cpsr.set(PSR::Flag::Zero,     rd == 0);
+        cpsr.set(PSR::Flag::Carry,    carry);
     }
     void ARM7TDMI::add_subtract(ins16_t instruction)
     {
@@ -1218,8 +1229,8 @@ namespace dot::gba
 
 		
 
-		cpsr.set_flag(PSR::Flag::Negative, result[31]);
-		cpsr.set_flag(PSR::Flag::Zero,     result == 0);
+		cpsr.set(PSR::Flag::Negative, result[31]);
+		cpsr.set(PSR::Flag::Zero,     result == 0);
     }
     void ARM7TDMI::alu_operations(ins16_t instruction)
     {
@@ -1262,9 +1273,9 @@ namespace dot::gba
 
 
 
-		cpsr.set_flag(PSR::Flag::Negative, result[31]);
-		cpsr.set_flag(PSR::Flag::Zero,     result == 0);
-		cpsr.set_flag(PSR::Flag::Carry,    carry);
+		cpsr.set(PSR::Flag::Negative, result[31]);
+		cpsr.set(PSR::Flag::Zero,     result == 0);
+		cpsr.set(PSR::Flag::Carry,    carry);
 
         //TODO: ...?
 		//const auto signRn = get_bit(rn, 31);               //Check for overflow by comparing the sign of the operands
@@ -1305,8 +1316,8 @@ namespace dot::gba
             {
                 result = rd - rs; 
 
-				cpsr.set_flag(PSR::Flag::Negative, result[31]);
-				cpsr.set_flag(PSR::Flag::Zero,     result == 0);
+				cpsr.set(PSR::Flag::Negative, result[31]);
+				cpsr.set(PSR::Flag::Zero,     result == 0);
 
                 break;
             }
@@ -1326,7 +1337,7 @@ namespace dot::gba
                     m_pipelineARM.flush();
                 }
 
-				cpsr.set_flag(PSR::Flag::Thumb, tFlag);
+				cpsr.set(PSR::Flag::Thumb, tFlag);
 
 				break;
 			}
@@ -1658,8 +1669,8 @@ namespace dot::gba
         spsr = cpsr;
 		
         switch_mode(OperatingMode::SVC);
-        cpsr.set_flag(PSR::Flag::IRQ, true);
-        cpsr.set_flag(PSR::Flag::Thumb, false);
+        cpsr.set(PSR::Flag::IRQ, true);
+        cpsr.set(PSR::Flag::Thumb, false);
 
 		m_registers[14] = m_registers[15] - 2;
 		m_registers[15] = 0x8;
