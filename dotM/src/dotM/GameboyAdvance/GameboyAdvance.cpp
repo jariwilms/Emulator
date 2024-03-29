@@ -7,49 +7,49 @@ namespace dot::gba
 {
 	GameboyAdvance::GameboyAdvance()
 	{
-		m_cpu   = std::make_shared<ARM7TDMI>();                                //TODO: make unique for all?
-		m_ppu   = std::make_shared<PPU>();
-		m_dma   = std::make_shared<DMAController>();
-		
-		m_bios  = std::make_shared<BIOS>();
-		m_iwram = std::make_shared<IWRAM>();
-		m_ewram = std::make_shared<EWRAM>();
-		m_vram  = std::make_shared<VRAM>();
-		m_oam   = std::make_shared<OAM>();
-		m_opal  = std::make_shared<OPAL>();
+		//m_cpu   = std::make_shared<ARM7TDMI>();                                //TODO: make unique for all?
+		//m_ppu   = std::make_shared<PPU>();
+		//m_dma   = std::make_shared<DMAController>();
+		//
+		//m_bios  = std::make_shared<BIOS>();
+		//m_iwram = std::make_shared<IWRAM>();
+		//m_ewram = std::make_shared<EWRAM>();
+		//m_vram  = std::make_shared<VRAM>();
+		//m_oam   = std::make_shared<OAM>();
+		//m_opal  = std::make_shared<OPAL>();
 
-		m_bus   = std::make_shared<BUS<32>>();
-
-
-		
-		m_cpu->connect(m_bus);
-		m_ppu->connect(m_bus);
-		m_ppu->connect2(m_vram); //TODO
-		m_dma->connect(m_bus);
-
-		m_bus->connect(m_bios);
-		m_bus->connect(m_iwram);
-		m_bus->connect(m_ewram);
-		m_bus->connect(m_vram);
-		m_bus->connect(m_oam);
-		m_bus->connect(m_opal);
-
-		m_bus->connect(m_cartridge.cart0);
-		m_bus->connect(m_cartridge.cart1);
-		m_bus->connect(m_cartridge.cart2);
-		m_bus->connect(m_cartridge.cartS);
+		//m_bus   = std::make_shared<BUS<32>>();
 
 
+		//
+		//m_cpu->connect(m_bus);
+		//m_ppu->connect(m_bus);
+		//m_ppu->connect2(m_vram); //TODO
+		//m_dma->connect(m_bus);
 
-		unsigned int index{};
-		for (auto& timer : m_timers)                                           //Create 4 timers and link each one to its predecessor, excluding the first timer
-		{
-			if (index) timer = std::make_shared<Timer>(index, m_timers[index - 1]);
-			else       timer = std::make_shared<Timer>(index);
+		//m_bus->connect(m_bios);
+		//m_bus->connect(m_iwram);
+		//m_bus->connect(m_ewram);
+		//m_bus->connect(m_vram);
+		//m_bus->connect(m_oam);
+		//m_bus->connect(m_opal);
 
-			timer->connect(m_bus);
-			++index;
-		}
+		//m_bus->connect(m_cartridge.cart0);
+		//m_bus->connect(m_cartridge.cart1);
+		//m_bus->connect(m_cartridge.cart2);
+		//m_bus->connect(m_cartridge.cartS);
+
+
+
+		//unsigned int index{};
+		//for (auto& timer : m_timers)                                           //Create 4 timers and link each one to its predecessor, excluding the first timer
+		//{
+		//	if (index) timer = std::make_shared<Timer>(index, m_timers[index - 1]);
+		//	else       timer = std::make_shared<Timer>(index);
+
+		//	timer->connect(m_bus);
+		//	++index;
+		//}
 	}
 
 

@@ -212,7 +212,8 @@ namespace dot::gba
         void cycle();
         void reset();
 		
-		void raise_interrupt(InterruptType type);
+		void signal_irq();
+		void signal_fiq();
 
 		State state();
 
@@ -262,8 +263,7 @@ namespace dot::gba
 		void decode();
 		void execute();
 
-        void interrupt();                                                      //rename handle_interrupts?
-		void irq_temp();                                                       //remove
+		void handle_interrupt();
 		void exception();
 		void abort();
 		void switch_mode(OperatingMode operatingMode);
@@ -316,7 +316,7 @@ namespace dot::gba
         OperationARM m_operationARM{};                                         
         OperationTHUMB m_operationTHUMB{};
 
-        unsigned int m_cycles{};
+        unsigned int m_waitCycles{};
 		bool m_irqRequest{};
 		bool m_fiqRequest{};
 		bool m_halted{};

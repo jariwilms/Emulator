@@ -12,9 +12,9 @@ namespace dot::gba
     void ARM7TDMI::cycle()
     {
         if (m_halted) return;
-        if (m_cycles)
+        if (m_waitCycles)
         {
-            --m_cycles;
+            --m_waitCycles;
             return;
         }
 
@@ -28,20 +28,18 @@ namespace dot::gba
         m_registers.reset();                                                   //All registers are set to 0, some values are adjusted based on reset specification
     }
 
-    void ARM7TDMI::raise_interrupt(InterruptType type)
+    void ARM7TDMI::signal_irq()
     {
-        switch (type)
-        {
-            case InterruptType::IRQ: m_irqRequest = true; break;
-            case InterruptType::FIQ: m_fiqRequest = true; break;
-
-            default: throw std::invalid_argument("Invalid interrupt type");
-        }
+        m_irqRequest = true;
+    }
+    void ARM7TDMI::signal_fiq()
+    {
+        m_fiqRequest = true;
     }
 
     ARM7TDMI::State ARM7TDMI::state()
 	{
-		return State{ m_pipeline, m_registers, m_cycles };
+		return State{ m_pipeline, m_registers, m_waitCycles };
 	}
 
     void ARM7TDMI::fetch()
@@ -254,34 +252,31 @@ namespace dot::gba
         }
     }
 
-	void ARM7TDMI::interrupt()
+	void ARM7TDMI::handle_interrupt()
 	{
         using namespace dot::arc;
 		
-        const auto IME = bus->read<dword>(REG_IME);
-		const auto IE  = bus->read<dword>(REG_IE);
-		const auto IF  = bus->read<dword>(REG_IF);
+        const auto& imeReg = bus->read<dword>(REG_IME);
+		const auto& ieReg  = bus->read<dword>(REG_IE);
+		const auto& ifReg  = bus->read<dword>(REG_IF);
 
-        const auto enabled = get_bit(IME, 0);
-		const auto interrupts = IE & IF;
+        const auto& enabled    = get_bit(imeReg, 0);
+		const auto& interrupts = ieReg & ifReg;
+
         if (!enabled || !interrupts) return;
 		
 		
 		
-        irq_temp();
-	}
-    void ARM7TDMI::irq_temp()
-    {
-		using namespace dot::arc;
+        using namespace dot::arc;
 
-		auto& cpsr = m_registers.cpsr();
+        auto& cpsr = m_registers.cpsr();
         auto& spsr = m_registers.spsr(OperatingMode::IRQ);
-		const auto tFlag = cpsr.flag(PSR::Flag::Thumb);
+        const auto tFlag = cpsr.flag(PSR::Flag::Thumb);
 
-		if (cpsr.flag(PSR::Flag::IRQ)) return;                                 //IRQ flag set means disabled
+        if (cpsr.flag(PSR::Flag::IRQ)) return;                                 //IRQ flag set means disabled
 
 
-		
+
         switch_mode(OperatingMode::IRQ);
         cpsr.set(PSR::Flag::IRQ, true);                                        //Disable further IRQ's
         spsr = cpsr;
@@ -298,7 +293,7 @@ namespace dot::gba
 
         m_registers[15] = VEC_IRQ;
         m_pipeline.flush();
-    }
+	}
     void ARM7TDMI::exception()
     {
 
@@ -312,7 +307,7 @@ namespace dot::gba
 	{
 		auto& cpsr = m_registers.cpsr();
 
-        if (cpsr.mode() != operatingMode) cpsr = set_bits<dword>(cpsr, 0, 5, static_cast<int>(operatingMode));
+        if (cpsr.mode() != operatingMode) cpsr = set_bits<dword>(cpsr, 0, 5, static_cast<dword>(operatingMode));
 		m_registers.bank(operatingMode);
 	}
 
