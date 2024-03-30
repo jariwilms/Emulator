@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <functional>
 #include <optional>
+#include <variant>
 
 #include <memory>
 #include <chrono>
