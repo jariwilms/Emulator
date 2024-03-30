@@ -482,7 +482,7 @@ namespace dot::gba
         const auto& sFlag    = get_bit (instruction, 20);
 
         auto& rd = m_registers[rdIndex];
-        auto& rn = m_registers[rnIndex];
+        dword rn = m_registers[rnIndex];
 
         dword op2{};
         Register<dword> result{};
@@ -1211,22 +1211,22 @@ namespace dot::gba
 		
         switch (opcode)
         {
-			case 0b0000: rd = rd & rs;                            break;                               //AND
-			case 0b0001: rd = rd ^ rs;                            break;                               //EOR
-			case 0b0010: std::tie(rd, carry) = shift_carry(rd, CPU::ShiftType::LSL, rs, carry); break; //LSL
-			case 0b0011: std::tie(rd, carry) = shift_carry(rd, CPU::ShiftType::LSR, rs, carry); break; //LSR
-            case 0b0100: std::tie(rd, carry) = shift_carry(rd, CPU::ShiftType::ASR, rs, carry); break; //ASR
-			case 0b0101: rd = rd + rs + carry;                    break;                               //ADC
-			case 0b0110: rd = rd - rs - !carry;                   break;                               //SBC
-			case 0b0111: std::tie(rd, carry) = shift_carry(rd, CPU::ShiftType::ROR, rs, carry); break; //ROR
-			case 0b1000: result = rd & rs;                        break;                               //TST
-			case 0b1001: rd = rs * -1;                            break;                               //NEG
-			case 0b1010: result = rd - rs;                        break;                               //CMP
-			case 0b1011: result = rd + rs;                        break;                               //CMN
-			case 0b1100: rd = rd | rs;                            break;                               //ORR
-			case 0b1101: rd = rd * rs;                            break;                               //MUL
-			case 0b1110: rd = rd & (~rs);                         break;                               //BIC
-			case 0b1111: rd = ~rs;                                break;                               //MVN
+			case 0b0000: rd = rd & rs;                            break;                          //AND
+			case 0b0001: rd = rd ^ rs;                            break;                          //EOR
+			case 0b0010: std::tie(rd, carry) = shift_carry(rd, ShiftType::LSL, rs, carry); break; //LSL
+			case 0b0011: std::tie(rd, carry) = shift_carry(rd, ShiftType::LSR, rs, carry); break; //LSR
+            case 0b0100: std::tie(rd, carry) = shift_carry(rd, ShiftType::ASR, rs, carry); break; //ASR
+			case 0b0101: rd = rd + rs + carry;                    break;                          //ADC
+			case 0b0110: rd = rd - rs - !carry;                   break;                          //SBC
+			case 0b0111: std::tie(rd, carry) = shift_carry(rd, ShiftType::ROR, rs, carry); break; //ROR
+			case 0b1000: result = rd & rs;                        break;                          //TST
+			case 0b1001: rd = rs * -1;                            break;                          //NEG
+			case 0b1010: result = rd - rs;                        break;                          //CMP
+			case 0b1011: result = rd + rs;                        break;                          //CMN
+			case 0b1100: rd = rd | rs;                            break;                          //ORR
+			case 0b1101: rd = rd * rs;                            break;                          //MUL
+			case 0b1110: rd = rd & (~rs);                         break;                          //BIC
+			case 0b1111: rd = ~rs;                                break;                          //MVN
 
 			default:                                              throw std::runtime_error("Invalid opcode");
         }

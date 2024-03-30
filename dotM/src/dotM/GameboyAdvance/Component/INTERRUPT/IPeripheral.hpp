@@ -20,7 +20,7 @@ namespace dot::gba
 	protected:
 		void raise_interrupt(ARM7TDMI::InterruptType type = ARM7TDMI::InterruptType::IRQ)
 		{
-			processor->signal_irq(type);
+			//processor->signal_irq(type);
 		}
 
 	private:

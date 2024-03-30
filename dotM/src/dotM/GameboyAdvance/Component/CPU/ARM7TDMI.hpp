@@ -5,10 +5,10 @@
 #include "dotM/Architecture/EXCEPT/VECTOR.hpp"
 #include "dotM/Architecture/LUT/ARM.hpp"
 #include "dotM/Architecture/LUT/THUMB.hpp"
-#include "dotM/GameboyAdvance/Component/BUS/BUS.hpp"
 #include "dotM/Architecture/MEMORY/MAP.hpp"
-#include "dotM/Model/Component/CPU/CPU.hpp"
+#include "dotM/GameboyAdvance/Component/BUS/BUS.hpp"
 #include "dotM/GameboyAdvance/Component/BUS/IConnectable.hpp"
+#include "dotM/Model/Component/CPU/CPU.hpp"
 
 namespace dot::gba
 {
@@ -66,9 +66,7 @@ namespace dot::gba
 			};
 
 			PSR() = default;
-			virtual ~PSR() = default;
-
-
+			~PSR() = default;
 
 			bool flag(Flag flag) const
 			{
@@ -83,8 +81,6 @@ namespace dot::gba
 			{
 				return static_cast<OperatingMode>(m_value & 0x1F);
 			}
-
-
 
 			PSR& operator=(const PSR& other)                                   //TODO: fix PSR and base register operators => not clean/cohesive
 			{
@@ -106,42 +102,7 @@ namespace dot::gba
 			{
 				reset();
 			}
-			~Registers() = default;
-
-			void bank(OperatingMode operatingMode)                             //Just accept it
-			{
-				const auto bank_rxp = [this](unsigned int loops, unsigned int xOffset, unsigned int pOffset)
-				{
-					for (unsigned int i = 0; i < loops; ++i) { m_rxp[i + pOffset] = m_rx.data() + i + xOffset; };
-				};
-
-
-
-				bank_rxp(16, 0, 0);                                            //Bank to USR mode => Some registers may need to be remapped to their default
-
-				switch (operatingMode)
-				{
-					case USR:                       break;                     //This operation would thus be redundant
-					case FIQ: bank_rxp(7, 16, 8); break;
-					case IRQ: bank_rxp(2, 23, 13); break;
-					case SVC: bank_rxp(2, 25, 13); break;
-					case ABT: bank_rxp(2, 27, 13); break;
-					case UND: bank_rxp(2, 29, 13); break;
-					case SYS:                       break;                     //SYS mode registers do not exist => same operation as USR mode
-
-					default:                        throw std::invalid_argument("Invalid operating mode!");
-				}
-			}
-			void reset()
-			{
-				m_rSVC[1] = m_rx[15];                                          //The PC is stored in a SVC register
-				m_rx[15]  = 0x0;                                               //The PC is set to the reset vector TODO
-
-				m_spsrSVC = m_cpsr;                                            //The current CPSR is copied
-				m_cpsr    = set_bits<dword>(m_cpsr, 0, 5, 0xD3);               //SVC mode, FIQ + IRQ set, T cleared
-
-				bank(m_cpsr.mode());                                           //Bank to the new mode
-			}
+			~Registers() {}
 
 			Register<dword>& rx(unsigned int index)
 			{
@@ -161,8 +122,44 @@ namespace dot::gba
 					case OperatingMode::ABT: return m_spsrABT;
 					case OperatingMode::UND: return m_spsrUND;
 
-					default: throw std::invalid_argument("Invalid operating mode");
+					default:                 throw std::invalid_argument("Invalid operating mode!");
 				}
+			}
+
+			void bank(OperatingMode operatingMode)
+			{
+				const auto& bank_rxp = [this](unsigned int iterations, unsigned int xOffset, unsigned int pOffset)
+				{
+					for (unsigned int i = 0; i < iterations; ++i) 
+						m_rxp[i + pOffset] = m_rx.data() + i + xOffset;
+				};
+
+
+
+				bank_rxp(16, 0, 0);                                            //Bank to USR mode => Some registers may need to be remapped to their default
+
+				switch (operatingMode)
+				{
+					case USR:                      break;                      //This operation would be redundant
+					case FIQ: bank_rxp(7, 16,  8); break;
+					case IRQ: bank_rxp(2, 23, 13); break;
+					case SVC: bank_rxp(2, 25, 13); break;
+					case ABT: bank_rxp(2, 27, 13); break;
+					case UND: bank_rxp(2, 29, 13); break;
+					case SYS:                      break;                      //SYS mode registers do not exist => same operation as USR mode
+
+					default:                       throw std::invalid_argument("Invalid operating mode!");
+				}
+			}
+			void reset()
+			{
+				m_rSVC[1] = m_rx[15];                                          //The PC is stored in a SVC register
+				m_rx[15]  = 0x0;                                               //The PC is set to the reset vector TODO
+
+				m_spsrSVC = m_cpsr;                                            //The current CPSR is copied
+				m_cpsr    = set_bits<dword>(m_cpsr, 0, 5, 0xD3);               //SVC mode, FIQ + IRQ set, T cleared
+
+				bank(m_cpsr.mode());                                           //Bank to the new mode
 			}
 
 			Register<dword>& operator[](unsigned int index)
@@ -171,29 +168,26 @@ namespace dot::gba
 			}
 
 		private:
-			std::array<Register<dword>,  31> m_rx{};
 			std::array<Register<dword>*, 16> m_rxp{};
-
-			//Helper declarations
-			std::span<Register<dword>, 15> m_rUSR{ m_rx.begin() +  0, m_rx.begin() + 15 };
-			std::span<Register<dword>,  7> m_rFIQ{ m_rx.begin() + 15, m_rx.begin() + 22 };
-			std::span<Register<dword>,  2> m_rIRQ{ m_rx.begin() + 22, m_rx.begin() + 24 };
-			std::span<Register<dword>,  2> m_rSVC{ m_rx.begin() + 24, m_rx.begin() + 26 };
-			std::span<Register<dword>,  2> m_rABT{ m_rx.begin() + 26, m_rx.begin() + 28 };
-			std::span<Register<dword>,  2> m_rUND{ m_rx.begin() + 28, m_rx.begin() + 30 };
-
-
-
-			std::array<PSR, 6> m_srx{};
-
-			//Helper declarations
-			PSR& m_cpsr{ m_srx[0] };
-			PSR& m_spsrFIQ{ m_srx[1] };
-			PSR& m_spsrIRQ{ m_srx[2] };
-			PSR& m_spsrSVC{ m_srx[3] };
-			PSR& m_spsrABT{ m_srx[4] };
-			PSR& m_spsrUND{ m_srx[5] };
+			union
+			{
+				std::array<Register<dword>, 31> m_rx{};
+				struct
+				{
+					std::array<Register<dword>, 16> m_rUSR;
+					std::array<Register<dword>,  7> m_rFIQ;
+					std::array<Register<dword>,  2> m_rIRQ, m_rSVC, m_rABT, m_rUND;
+				};
+			};
+			union
+			{
+				PSR m_srx[6]{};
+				struct{ PSR m_cpsr, m_spsrFIQ, m_spsrIRQ, m_spsrSVC, m_spsrABT, m_spsrUND; };
+			};
 		};
+
+
+
 		struct State
 		{
 		public:
@@ -207,7 +201,7 @@ namespace dot::gba
 		};
 		
 		ARM7TDMI();
-        ~ARM7TDMI() = default;
+		~ARM7TDMI() = default;
 
         void cycle();
         void reset();
