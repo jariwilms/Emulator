@@ -5,8 +5,7 @@
 namespace dot::arc
 {
     constexpr unsigned int THUMB_FORMAT_COUNT = 19;
-
-    const std::array<unsigned short, THUMB_FORMAT_COUNT> THUMB_INSTRUCTION_FORMAT
+    constexpr std::array<unsigned short, THUMB_FORMAT_COUNT> THUMB_INSTRUCTION_FORMAT
     {
         0x0000,                                                                //MoveShiftedRegister
         0x1800,                                                                //AddSubtract
@@ -28,8 +27,7 @@ namespace dot::arc
         0xE000,                                                                //UnconditionalBranch
         0xF000,                                                                //LongBranchWithLink
     };
-
-    const std::array<unsigned short, THUMB_FORMAT_COUNT> THUMB_INSTRUCTION_MASK
+    constexpr std::array<unsigned short, THUMB_FORMAT_COUNT> THUMB_INSTRUCTION_MASK
     {
         0xE000,                                                                //MoveShiftedRegister
         0xF800,                                                                //AddSubtract
@@ -51,5 +49,4 @@ namespace dot::arc
         0xF800,                                                                //UnconditionalBranch
         0xF000,                                                                //LongBranchWithLink
     };
-
 }

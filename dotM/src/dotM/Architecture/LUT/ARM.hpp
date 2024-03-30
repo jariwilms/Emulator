@@ -5,8 +5,7 @@
 namespace dot::arc
 {
 	constexpr unsigned int ARM_FORMAT_COUNT = 15;
-
-	const std::array<unsigned int, ARM_FORMAT_COUNT> ARM_INSTRUCTION_FORMAT
+	constexpr std::array<unsigned int, ARM_FORMAT_COUNT> ARM_INSTRUCTION_FORMAT
 	{
 		0x0000'0000,                                                           //Data Processing
 		0x0000'0090,                                                           //Multiply
@@ -24,8 +23,7 @@ namespace dot::arc
 		0x0E00'0010,                                                           //Coprocessor Register Transfer
 		0x0F00'0000,                                                           //Software Interrupt
 	};
-
-	const std::array<unsigned int, ARM_FORMAT_COUNT> ARM_INSTRUCTION_MASK
+	constexpr std::array<unsigned int, ARM_FORMAT_COUNT> ARM_INSTRUCTION_MASK
 	{
 		0x0C00'0000,                                                           //Data Processing
 		0x0FC0'00F0,                                                           //Multiply
@@ -43,5 +41,4 @@ namespace dot::arc
 		0x0F00'0010,                                                           //Coprocessor RegisterTransfer
 		0x0F00'0000,                                                           //Software Interrupt
 	};
-
 }

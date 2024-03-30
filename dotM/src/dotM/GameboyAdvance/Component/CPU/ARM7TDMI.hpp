@@ -197,11 +197,11 @@ namespace dot::gba
 		struct State
 		{
 		public:
-			State(const Pipeline<ins32_t, 3>& pipeline, const Registers& registers, unsigned int cycles)
+			State(const Pipeline<ins32_t, dword, 3>& pipeline, const Registers& registers, unsigned int cycles)
 				: pipeline{ pipeline }, registers{ registers }, cycles{ cycles } {}
 			~State() = default;
 
-			const Pipeline<ins32_t, 3>& pipeline;
+			const Pipeline<ins32_t, dword, 3>& pipeline;
 			const Registers& registers;
 			const unsigned int& cycles;
 		};
@@ -269,7 +269,7 @@ namespace dot::gba
 		void switch_mode(OperatingMode operatingMode);
         
         bool check_condition(ins32_t instruction, const PSR& cpsr);
-        std::pair<dword, bool>shift_carry(dword value, ShiftType shift, dword amount, bool carryFlag = false);
+        std::tuple<dword, bool>shift_carry(dword value, ShiftType shift, dword amount, bool carryFlag = false);
 
 #pragma region ARM INSTRUCTIONS
         void data_processing                        (ins32_t instruction);
@@ -310,7 +310,7 @@ namespace dot::gba
         void long_branch_link                       (ins16_t instruction);
 #pragma endregion
 
-        Pipeline<ins32_t, 3> m_pipeline{};
+        Pipeline<ins32_t, dword, 3> m_pipeline{};
         
         Registers m_registers{};
         OperationARM m_operationARM{};                                         

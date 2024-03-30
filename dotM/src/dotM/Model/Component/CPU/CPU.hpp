@@ -40,7 +40,7 @@ namespace dot
 		template <typename T, size_t MSB>
 		static constexpr T sign_extend(const T& value)
 		{
-			struct extend{ T v : MSB; };                                       //We let the compiler do our job
+			struct extend{ T v : MSB; };                                       //Let the compiler handle it
 			
 			return extend{ value }.v;
 		}
@@ -101,61 +101,54 @@ namespace dot
 		protected:
 			T m_value{};
 		};
-		template<typename T, size_t STAGES>
+		template<typename T, typename U, size_t STAGES>
 		struct Pipeline
 		{
 		public:
 			Pipeline() = default;
 			~Pipeline() = default;
 
-			void push(const T& value, const T& address)
+			void push(const T& value, const U& address)
 			{
-				m_elements.front() = value;
-				m_addresses.front() = address;
+                std::shift_right(m_elements.begin(),  m_elements.end(),  1);
+                std::shift_right(m_addresses.begin(), m_addresses.end(), 1);
 
-				if (m_load == 0) ++m_load;
-			}
-			void shift()
-			{
-				std::shift_right(m_elements.begin(), m_elements.end(), 1);
-				std::shift_right(m_addresses.begin(), m_addresses.end(), 1);
+                m_elements.front()  = value;
+                m_addresses.front() = address;
 
-				m_elements.front() = 0;
-				m_addresses.front() = 0;
-
-				if (m_load < STAGES) ++m_load;
+                if (m_load < STAGES) ++m_load;
 			}
 			void flush()
 			{
 				static_assert(std::is_default_constructible<T>::value, "Type must be default constructible!");
 
-				std::fill(m_elements.begin(), m_elements.end(), T{});
-				std::fill(m_addresses.begin(), m_addresses.end(), T{});
+				std::fill(m_elements.begin(),  m_elements.end(),  T{});
+				std::fill(m_addresses.begin(), m_addresses.end(), U{});
 
-				m_load = 0;                                                    //Reset load
+				m_load = 0;
 			}
 
 			inline unsigned int load() const
 			{
 				return m_load;
 			}
-			inline size_t size() const
+			inline size_t stages() const
 			{
 				return STAGES;
 			}
 
-			std::pair<T, T> operator[](unsigned int index)
+			std::tuple<T, U> operator[](unsigned int index)
 			{
 				if (index + 1 > m_load) throw std::out_of_range("Index out of range!");
 
-				return std::make_pair(m_elements[index], m_addresses[index]);
+				return std::make_tuple(m_elements[index], m_addresses[index]);
 			}
 
 		private:
 			std::array<T, STAGES> m_elements{};
-			std::array<T, STAGES> m_addresses{};
+			std::array<U, STAGES> m_addresses{};
 
-			unsigned int m_load{};                                             //The range of m_load is [0, STAGES]
+			unsigned int m_load{};
 		};
 	};
 }
