@@ -11,7 +11,5 @@ namespace dot::gba
 	{
 	public:
 		RAM() : MEMORY{ Access::Read_Write, ADDR0, ADDRF } {}
-
-		
 	};
 }

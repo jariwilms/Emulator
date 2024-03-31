@@ -98,7 +98,7 @@ namespace dot::gba
 
 		GameboyAdvance& operator=(const GameboyAdvance&) = delete;
 
-    protected:
+    //protected:
 		virtual void boot();
 		virtual void update();
 		virtual void run();

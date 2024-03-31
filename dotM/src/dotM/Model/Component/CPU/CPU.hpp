@@ -60,13 +60,13 @@ namespace dot
 
 			void push(const T& value, const U& address)
 			{
-                std::shift_right(m_elements.begin(),  m_elements.end(),  1);
+                std::shift_right(m_elements.begin(), m_elements.end(), 1);
                 std::shift_right(m_addresses.begin(), m_addresses.end(), 1);
 
                 m_elements.front()  = value;
                 m_addresses.front() = address;
 
-                if (m_load < STAGES) ++m_load;
+				if (m_load < STAGES) ++m_load;
 			}
 			void flush()
 			{

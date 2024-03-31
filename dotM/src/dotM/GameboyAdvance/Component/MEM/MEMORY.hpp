@@ -31,13 +31,13 @@ namespace dot::gba
 		template<typename T>
 		T read(size_t address) const
 		{
-			if (m_access == Access::Write) throw std::runtime_error("Cannot read from write-only memory.");
+			//if (m_access == Access::Write) throw std::runtime_error("Cannot read from write-only memory.");
 			return *data<T>(address);
 		}
 		template<typename T>
 		void write(size_t address, const T& value) const
 		{
-			if (m_access == Access::Read) throw std::runtime_error("Cannot write to read only memory!");
+			//if (m_access == Access::Read) throw std::runtime_error("Cannot write to read only memory!");
 			*data<T>(address) = value;
 		}
 
@@ -60,12 +60,12 @@ namespace dot::gba
 		{
 			return m_range;
 		}
-		bool contains(size_t address) const
+		bool contains(size_t address) const                                    //TODO: rename/remove
 		{
 			return address >= m_range.min  && address <= m_range.max;
 		}
 
-	protected:
+	//protected:
 		size_t translate(size_t address) const
 		{
 			if (!contains(address)) throw std::invalid_argument("Address out of range!");
@@ -73,7 +73,7 @@ namespace dot::gba
 			return address - m_range.min;
 		}
 		
-	private:
+	//private:
 		const Access m_access{};
 
 		std::unique_ptr<byte[]> m_memory{};

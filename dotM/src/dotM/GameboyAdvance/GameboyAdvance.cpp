@@ -7,30 +7,30 @@ namespace dot::gba
 {
 	GameboyAdvance::GameboyAdvance()
 	{
-		//m_cpu   = std::make_shared<ARM7TDMI>();                                //TODO: make unique for all?
-		//m_ppu   = std::make_shared<PPU>();
+		m_cpu   = std::make_shared<ARM7TDMI>();                                //TODO: make unique for all?
+		m_ppu   = std::make_shared<PPU>();
 		//m_dma   = std::make_shared<DMAController>();
 		//
-		//m_bios  = std::make_shared<BIOS>();
+		m_bios  = std::make_shared<BIOS>();
 		//m_iwram = std::make_shared<IWRAM>();
 		//m_ewram = std::make_shared<EWRAM>();
-		//m_vram  = std::make_shared<VRAM>();
+		m_vram  = std::make_shared<VRAM>();
 		//m_oam   = std::make_shared<OAM>();
 		//m_opal  = std::make_shared<OPAL>();
 
-		//m_bus   = std::make_shared<BUS<32>>();
+		m_bus   = std::make_shared<BUS<32>>();
 
 
 		//
-		//m_cpu->connect(m_bus);
-		//m_ppu->connect(m_bus);
+		m_cpu->connect(m_bus);
+		m_ppu->connect(m_bus);
 		//m_ppu->connect2(m_vram); //TODO
 		//m_dma->connect(m_bus);
 
-		//m_bus->connect(m_bios);
+		m_bus->connect(m_bios);
 		//m_bus->connect(m_iwram);
 		//m_bus->connect(m_ewram);
-		//m_bus->connect(m_vram);
+		m_bus->connect(m_vram);
 		//m_bus->connect(m_oam);
 		//m_bus->connect(m_opal);
 
@@ -85,7 +85,8 @@ namespace dot::gba
 
 	void GameboyAdvance::boot()
 	{
-		const auto& biosFile = read_file(BIOS_LOC);
+		const auto& biosFile = read_file(PAK_LOC);
+		//const auto& biosFile = read_file(BIOS_LOC);
 		if (biosFile.size() > m_bios->size()) throw std::invalid_argument{ "The given BIOS file is too large!" };
 
 		std::memcpy(m_bios->data(BIOSADDR0), biosFile.data(), biosFile.size());
@@ -94,22 +95,22 @@ namespace dot::gba
 	}
 	void GameboyAdvance::update()
 	{
-		using clock = std::chrono::steady_clock;
+		using Clock     = std::chrono::steady_clock;
 		using DeltaTime = std::chrono::duration<double, std::milli>;
 
 		static DeltaTime deltaTime{ 0 };
-		static clock::time_point t0{};
-		static clock::time_point t1{};
+		static Clock::time_point t0{};
+		static Clock::time_point t1{};
 		constexpr auto scanlineDelta = 59.73f / 60.0f;
 
 
 		
-		t1 = clock::now();
+		t1 = Clock::now();
 		deltaTime = t1 - t0;
 		t0 = t1;
 		
 		m_cpu->cycle();
-		if (deltaTime.count() > scanlineDelta) m_ppu->cycle();
+		//if (deltaTime.count() > scanlineDelta) m_ppu->cycle();
 	}
 	void GameboyAdvance::run()
 	{

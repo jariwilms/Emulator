@@ -186,16 +186,14 @@ namespace dot::gba
 			};
 		};
 
-
-
 		struct State
 		{
 		public:
-			State(const Pipeline<ins32_t, dword, 3>& pipeline, const Registers& registers, unsigned int cycles)
+			State(const Pipeline<ins32_t, dword, 2>& pipeline, const Registers& registers, unsigned int cycles)
 				: pipeline{ pipeline }, registers{ registers }, cycles{ cycles } {}
 			~State() = default;
 
-			const Pipeline<ins32_t, dword, 3>& pipeline;
+			const Pipeline<ins32_t, dword, 2>& pipeline;
 			const Registers& registers;
 			const unsigned int& cycles;
 		};
@@ -211,10 +209,10 @@ namespace dot::gba
 
 		State state();
 
-    protected:
+    //protected:
         enum class OperationARM
         {
-            DataProcessing,
+            DataProcessing = 0,
             Multiply,
             MultiplyLong,
             SingleDataSwap,
@@ -232,7 +230,7 @@ namespace dot::gba
         };
         enum class OperationTHUMB
         {
-            MoveShiftedRegister,
+            MoveShiftedRegister = 0,
             AddSubtract,
             MoveCompareAddSubtractImmediate,
             ALUOperations,
@@ -304,7 +302,7 @@ namespace dot::gba
         void long_branch_link                       (ins16_t instruction);
 #pragma endregion
 
-        Pipeline<ins32_t, dword, 3> m_pipeline{};
+        Pipeline<ins32_t, dword, 2> m_pipeline{};
         
         Registers m_registers{};
         OperationARM m_operationARM{};                                         

@@ -21,7 +21,7 @@ namespace dot::gba
 
                                    fetch();
         if (m_pipeline.load() > 1) decode();
-        if (m_pipeline.load() > 2) execute();
+        if (m_pipeline.load() > 1) execute();
     }
     void ARM7TDMI::reset()
     {
@@ -63,18 +63,16 @@ namespace dot::gba
             else       value >>= 16;                                           //If we already fetched, use the other part of the instruction
 
             instruction = value & 0x00FF;
-			
-            m_registers[15] += sizeof(word);                                   //Move instruction pointer 2 bytes forward
+
+            m_registers[15] += sizeof(word);
         }
         else
         {
             address     = m_registers[15] & ~0x3;                              //4 byte alignment
             instruction = bus->read<dword>(address);
-
-            m_registers[15] += sizeof(dword);                                  //Move instruction pointer 4 bytes forward
+            
+            m_registers[15] += sizeof(dword);
         }
-
-
 
         m_pipeline.push(instruction, address);
     }
@@ -122,7 +120,7 @@ namespace dot::gba
 			}
         }
 
-        throw std::runtime_error("Invalid instruction format!");                //TODO => undefined?
+        throw std::runtime_error("Invalid instruction format!");               //TODO => undefined?
     }
     void ARM7TDMI::execute()
     {
@@ -131,7 +129,7 @@ namespace dot::gba
         
 
 
-        const auto& [instruction, address] = m_pipeline[2];
+        const auto& [instruction, address] = m_pipeline[1];
 
         if (tFlag)
 		{
@@ -166,8 +164,8 @@ namespace dot::gba
 
 
 
-			using instructionFunc = void (ARM7TDMI::*)(ins16_t);
-			const std::unordered_map<OperationTHUMB, instructionFunc> operationToInstruction
+			using InstructionFunc = void (ARM7TDMI::*)(ins16_t);
+			const std::unordered_map<OperationTHUMB, InstructionFunc> operationToInstruction
 			{
                 { OperationTHUMB::MoveShiftedRegister,                &ARM7TDMI::move_shifted_register }, 
 				{ OperationTHUMB::AddSubtract,                        &ARM7TDMI::add_subtract }, 
@@ -194,8 +192,6 @@ namespace dot::gba
         }
         else
         {
-			const auto& [instruction, address] = m_pipeline[2];
-
             if (!check_condition(instruction, cpsr))
             {
                 std::cout << std::format("[{:#010x}] Not executed\n", address);
@@ -232,8 +228,8 @@ namespace dot::gba
 
 
 
-            using instructionFunc = void (ARM7TDMI::*)(ins32_t);
-            const std::unordered_map<OperationARM, instructionFunc> operationToInstruction
+            using InstructionFunc = void (ARM7TDMI::*)(ins32_t);
+            const std::unordered_map<OperationARM, InstructionFunc> operationToInstruction
             {
                 { OperationARM::DataProcessing,                      &ARM7TDMI::data_processing               },
                 { OperationARM::Multiply,                            &ARM7TDMI::multiply                      },
@@ -318,10 +314,10 @@ namespace dot::gba
 	{
 		const auto& condition = get_bits(instruction, 28, 4);
 
-		const auto N = cpsr.flag(PSR::Flag::Negative);
-		const auto Z = cpsr.flag(PSR::Flag::Zero);
-		const auto C = cpsr.flag(PSR::Flag::Carry);
-		const auto V = cpsr.flag(PSR::Flag::Overflow);
+		const auto& N = cpsr.flag(PSR::Flag::Negative);
+		const auto& Z = cpsr.flag(PSR::Flag::Zero);
+		const auto& C = cpsr.flag(PSR::Flag::Carry);
+		const auto& V = cpsr.flag(PSR::Flag::Overflow);
 
 		switch (condition)
 		{
@@ -469,8 +465,6 @@ namespace dot::gba
         return { result, carryOut };
     }
 
-
-
 #pragma region ARM INSTRUCTIONS
     void ARM7TDMI::data_processing(ins32_t instruction)
     {
@@ -485,7 +479,7 @@ namespace dot::gba
         dword rn = m_registers[rnIndex];
 
         dword op2{};
-        Register<dword> result{};
+        dword result{};
 
         auto& cpsr  = m_registers.cpsr();
         auto  carry = cpsr.flag(PSR::Flag::Carry);
@@ -598,7 +592,7 @@ namespace dot::gba
             {
 				const auto& functionType = opcodeToFunctionType.at(opcode);
 
-                cpsr.set(PSR::Flag::Negative, result[31]);  
+                cpsr.set(PSR::Flag::Negative, get_bit(result, 31));  
                 cpsr.set(PSR::Flag::Zero,     result == 0); 
                 cpsr.set(PSR::Flag::Carry,    carry);       
 
@@ -606,7 +600,7 @@ namespace dot::gba
                 {
                     const auto& signRn     = get_bit(rn,     31);              //Check for overflow by comparing the sign of the operands
                     const auto& signOp2    = get_bit(op2,    31);              //If the signs are the same, but the result has a different sign, overflow has occurred
-                    const auto& signResult = result[31];                       //(i.e. the sign of the result is different from the signs of the operands)
+                    const auto& signResult = get_bit(result, 31);              //(i.e. the sign of the result is different from the signs of the operands)
 
                     const auto& v = ((signRn == signOp2) && (signResult != signRn));
 
@@ -1067,23 +1061,13 @@ namespace dot::gba
 		const auto& offset24 = get_bits(instruction,  0, 24);
 		const auto& lFlag    = get_bit (instruction, 24);
 
+        const auto& offset   = sign_extend<dword, 25>(offset24 << 2);          //Offset: [0:23] << 2, so bit 25 is the sign bit
 
 
-        //dword offset = offset24;
-        //offset <<= 2;
-        //offset = sign_extend<int, 25>(offset);                                 
-        const auto& offset          = sign_extend<dword, 25>(offset24 << 2);   //Offset: [0:23] << 2, so bit 25 is the sign bit
-        const dword nextInstruction = m_registers[15] - 4;
 
-        if (lFlag)
-        {
-			m_registers[14]  = nextInstruction;
-			m_registers[15] += offset;
-        }
-        else
-        {
-            m_registers[15] += offset;
-        }
+        if (lFlag) m_registers[14] = m_registers[15] - sizeof(dword);
+
+        m_registers[15] += offset;
 
         m_pipeline.flush();
     }
