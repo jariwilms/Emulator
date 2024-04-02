@@ -15,9 +15,6 @@ namespace dot::gba
     class ARM7TDMI : public CPU, public IConnectable<32>
     {
     public:
-        using ins32_t = dword;
-        using ins16_t =  word;
-		
 		enum OperatingState
 		{
 			ARM,

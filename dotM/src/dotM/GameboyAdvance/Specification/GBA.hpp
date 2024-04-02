@@ -9,7 +9,7 @@
 namespace dot::gba
 {
     //Memory Mapping
-    constexpr size_t BIOSADDR0{ 0x00000000 }, BIOSADDRF{ 0x1E8480 };//  BIOSADDRF{ 0x00003FFF };       // 16 KB 
+    constexpr size_t BIOSADDR0 { 0x00000000 }, BIOSADDRF { 0x00003FFF };       // 16 KB 
     constexpr size_t EWRAMADDR0{ 0x02000000 }, WRAMADDRF { 0x0203FFFF };	   //256 KB - WS2
     constexpr size_t IWRAMADDR0{ 0x03000000 }, IWRAMADDRF{ 0x03007FFF };	   // 32 KB
     constexpr size_t IOREGADDR0{ 0x04000000 }, IOREGADDRF{ 0x040003FE };	   //  1 KB

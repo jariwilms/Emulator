@@ -1,7 +1,6 @@
 #include <stdafx.hpp>
 
 #include "GameBoyAdvance.hpp"
-#include "dotM/Library/File.hpp"
 
 namespace dot::gba
 {
