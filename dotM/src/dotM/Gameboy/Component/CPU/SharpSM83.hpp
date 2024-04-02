@@ -2,24 +2,18 @@
 
 #include <stdafx.hpp>
 
-#include "dotM/Library/Bitwise.hpp"
-
 namespace dot::gb
 {
     class SharpSM83
     {
     public:
-        using ins8_t = byte;
-
-        SharpSM83()  = default;
+        SharpSM83(std::array<byte, 0xFFFF>& memory);
         ~SharpSM83() = default;
 
+        void cycle();
+        void reset();
+
     private:
-        enum class InstructionSet
-        {
-            NOP = 0, 
-            LoadRegister, 
-        };
         struct Registers
         {
         public:
@@ -32,6 +26,16 @@ namespace dot::gb
             };
 
             Registers() = default;
+
+            void reset()
+            {
+                af = 0;
+                bc = 0;
+                de = 0;
+                hl = 0;
+                sp = 0;
+                pc = 0;
+            }
 
             bool flag(Flag flag) const
             {
@@ -54,37 +58,36 @@ namespace dot::gb
             union
             {
                 word af{};
-                byte a, f;
+                struct { byte a, f; };
             };
             union
             {
                 word bc{};
-                byte b, c;
+                struct { byte b, c; };
             };
             union
             {
                 word de{};
-                byte d, e;
+                struct { byte d, e; };
             };
             union
             {
                 word hl{};
-                byte h, l;
+                struct { byte h, l; };
             };
             word sp{};
             word pc{};
         };
 
         void fetch();
-        void decode();
         void execute();
 
         Registers m_registers{};
-        ins8_t m_opcode{};
+        ins8_t    m_opcode{};
 
         bool m_ime{};
         bool m_imeNext{};
 
-        std::array<byte, 0xFFFF> m_memory{};
+        std::array<byte, 0xFFFF>& m_memory;
     };
 }

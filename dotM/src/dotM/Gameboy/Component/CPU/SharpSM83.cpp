@@ -4,19 +4,31 @@
 
 namespace dot::gb
 {
+    SharpSM83::SharpSM83(std::array<byte, 0xFFFF>& memory)
+        : m_memory{ memory }
+    {
+
+    }
+
+    void SharpSM83::cycle()
+    {
+        fetch();
+        //decode(); //Redundant? Nothing has to be decoded due to jump table
+        execute();
+    }
+
+    void SharpSM83::reset()
+    {
+        m_registers.reset();
+        m_opcode = 0;
+
+        m_ime     = false;
+        m_imeNext = false;
+    }
+
     void SharpSM83::fetch()
     {
-        const auto& read = []() -> ins8_t
-            {
-                return 0;
-            };
-
-        m_opcode = read();
-        ++m_registers.pc;
-    }
-    void SharpSM83::decode()
-    {
-
+        m_opcode = m_memory.at(m_registers.pc++);
     }
     void SharpSM83::execute()
     {
@@ -1775,7 +1787,7 @@ namespace dot::gb
             }
             case 0xC7: //RST $00
             {
-                const auto& address = 0x00;
+                const word address = 0x00;
 
                 --m_registers.sp;
 
@@ -1867,7 +1879,7 @@ namespace dot::gb
             }
             case 0xCF: //RST $08
             {
-                const auto& address = 0x08;
+                const word address = 0x08;
 
                 --m_registers.sp;
 
@@ -1958,7 +1970,7 @@ namespace dot::gb
             }
             case 0xD7: //RST $10
             {
-                const auto& address = 0x10;
+                const word address = 0x10;
 
                 --m_registers.sp;
 
@@ -2046,7 +2058,7 @@ namespace dot::gb
             }
             case 0xDF: //RST $18
             {
-                const auto& address = 0x18;
+                const word address = 0x18;
 
                 --m_registers.sp;
 
@@ -2063,7 +2075,7 @@ namespace dot::gb
             case 0xE0: //LDH [a8], A
             {
                 const auto& value = m_memory.at(m_registers.pc++);
-                const auto& address = (0xFF << 8) | value;
+                const word address = (0xFF << 8) | value;
 
                 m_memory.at(address) = m_registers.a;
 
@@ -2080,7 +2092,7 @@ namespace dot::gb
             }
             case 0xE2: //LD [C], A
             {
-                const auto& address = (0xFF << 8) | m_registers.c;
+                const word address = (0xFF << 8) | m_registers.c;
 
                 m_memory.at(address) = m_registers.a;
 
@@ -2124,7 +2136,7 @@ namespace dot::gb
             }
             case 0xE7: //RST $20
             {
-                const auto& address = 0x20;
+                const word address = 0x20;
 
                 --m_registers.sp;
 
@@ -2158,7 +2170,7 @@ namespace dot::gb
             {
                 const auto& lsb     = m_memory.at(m_registers.pc++);
                 const auto& msb     = m_memory.at(m_registers.pc++);
-                const auto& address = (msb << 8) | lsb;
+                const word address = (msb << 8) | lsb;
 
                 m_memory.at(address) = m_registers.a;
 
@@ -2201,7 +2213,7 @@ namespace dot::gb
             }
             case 0xEF: //RST $28
             {
-                const auto& address = 0x28;
+                const word address = 0x28;
 
                 --m_registers.sp;
 
@@ -2218,7 +2230,7 @@ namespace dot::gb
             case 0xF0: //LDH A, [a8]
             {
                 const auto& value   = m_memory.at(m_registers.pc++);
-                const auto& address = (0xFF << 8) | value;
+                const word address = (0xFF << 8) | value;
 
                 m_registers.a = m_memory.at(address);
 
@@ -2235,7 +2247,7 @@ namespace dot::gb
             }
             case 0xF2: //LD A, [C]
             {
-                const auto& address = (0xFF << 8) | m_registers.c;
+                const word address = (0xFF << 8) | m_registers.c;
 
                 m_registers.a = m_memory.at(address);
 
@@ -2278,7 +2290,7 @@ namespace dot::gb
             }
             case 0xF7: //RST $30
             {
-                const auto& address = 0x30;
+                const word address = 0x30;
 
                 --m_registers.sp;
 
@@ -2353,7 +2365,7 @@ namespace dot::gb
             }
             case 0xFF: //RST $38
             {
-                const auto& address = 0x38;
+                const word address = 0x38;
 
                 --m_registers.sp;
 
