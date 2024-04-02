@@ -2,9 +2,9 @@
 
 #include <stdafx.hpp>
 
-#include "dotM/GameboyAdvance/Component/BUS/BUS.hpp"
-#include "dotM/GameboyAdvance/Component/BUS/IConnectable.hpp"
-#include "dotM/Architecture/MEMORY/MAP.hpp"
+#include "dotM/GameBoyAdvance/Component/BUS/BUS.hpp"
+#include "dotM/GameBoyAdvance/Component/BUS/IConnectable.hpp"
+#include "dotM/GameBoyAdvance/Architecture/MEMORY/MAP.hpp"
 
 namespace dot::gba
 {

@@ -31,5 +31,5 @@
 
 #include <filesystem>
 
-#include "dotM/Architecture/FORMAT/Type.hpp"
 #include "dotM/Library/Bitwise.hpp"
+#include "dotM/Library/Type.hpp"

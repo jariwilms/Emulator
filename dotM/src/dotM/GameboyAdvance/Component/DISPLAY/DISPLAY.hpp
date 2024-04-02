@@ -2,8 +2,8 @@
 
 #include <stdafx.hpp>
 
-#include "dotM/GameboyAdvance/Component/MEM/RAM.hpp"
-#include "dotM/Architecture/MEMORY/MAP.hpp"
+#include "dotM/GameBoyAdvance/Component/MEM/RAM.hpp"
+#include "dotM/GameBoyAdvance/Architecture/MEMORY/MAP.hpp"
 
 namespace dot::gba
 {

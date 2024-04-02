@@ -32,7 +32,7 @@ constexpr inline T set_bit(const T& value, U index, bool state)
 	static_assert(sizeof(T) <= sizeof(unsigned long long), "Size may not exceed unsigned long long size!");
 	static_assert(sizeof(U) <= sizeof(unsigned long long), "Size may not exceed unsigned long long size!");
 
-	return value ^ (-static_cast<int>(state) ^ value) & ((U{} + 1) << index);
+	return value ^ (-static_cast<int>(state) ^ value) & ((U{} + 1) << index);  //TODO: cast<int> might give problem with larger types
 }
 template<typename T, typename U, typename V>
 constexpr inline T set_bits(const T& value, U index, U count, const V& src)
@@ -51,7 +51,7 @@ constexpr inline T set_bits(const T& value, U index, U count, const V& src)
 template <typename T, size_t MSB>
 static constexpr T sign_extend(const T& value)
 {
-    struct extend { T v : MSB; };                                       //Let the compiler handle it
+    struct extend { T v : MSB; };                                              //Let the compiler handle it
 
     return extend{ value }.v;
 }
@@ -72,7 +72,7 @@ static constexpr T bit_reverse(const T& value)
     return result;
 }
 
-enum class ShiftType
+enum class ShiftType                                                           //TODO: make more generic. Values are bound to ARM7
 {
     LSL = 0b00,                                                                //Logical Shift Left
     LSR = 0b01,                                                                //Logical Shift Right

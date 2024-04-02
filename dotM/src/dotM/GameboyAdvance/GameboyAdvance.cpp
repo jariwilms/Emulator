@@ -1,11 +1,11 @@
 #include <stdafx.hpp>
 
-#include "GameboyAdvance.hpp"
+#include "GameBoyAdvance.hpp"
 #include "dotM/Library/File.hpp"
 
 namespace dot::gba
 {
-	GameboyAdvance::GameboyAdvance()
+	GameBoyAdvance::GameBoyAdvance()
 	{
 		m_cpu   = std::make_shared<ARM7TDMI>();                                //TODO: make unique for all?
 		m_ppu   = std::make_shared<PPU>();
@@ -54,16 +54,16 @@ namespace dot::gba
 
 
 
-	void GameboyAdvance::on()
+	void GameBoyAdvance::on()
 	{
 		boot();
 		run();
 	}
-	void GameboyAdvance::off()
+	void GameBoyAdvance::off()
 	{
 		m_running = false;
 	}
-	void GameboyAdvance::press(Key key)
+	void GameBoyAdvance::press(Key key)
 	{
 		using namespace dot::arc;
 		
@@ -73,17 +73,17 @@ namespace dot::gba
 		set_bit((*input), static_cast<unsigned int>(key), false);
 	}
 	
-	void GameboyAdvance::slot(const Cartridge& cartridge)
+	void GameBoyAdvance::slot(const Cartridge& cartridge)
 	{
 		m_cartridge = cartridge;
 		m_cartridgeSlotted = true;
 	}
-	void GameboyAdvance::unslot()
+	void GameBoyAdvance::unslot()
 	{
 		m_cartridgeSlotted = false;
 	}
 
-	void GameboyAdvance::boot()
+	void GameBoyAdvance::boot()
 	{
 		const auto& biosFile = read_file(PAK_LOC);
 		//const auto& biosFile = read_file(BIOS_LOC);
@@ -93,7 +93,7 @@ namespace dot::gba
 
 		m_running = true;
 	}
-	void GameboyAdvance::update()
+	void GameBoyAdvance::update()
 	{
 		using Clock     = std::chrono::steady_clock;
 		using DeltaTime = std::chrono::duration<double, std::milli>;
@@ -112,7 +112,7 @@ namespace dot::gba
 		m_cpu->cycle();
 		//if (deltaTime.count() > scanlineDelta) m_ppu->cycle();
 	}
-	void GameboyAdvance::run()
+	void GameBoyAdvance::run()
 	{
 		using clock = std::chrono::steady_clock;
 		using DeltaTime = std::chrono::duration<double, std::milli>;

@@ -10,7 +10,7 @@
 
 namespace dot::gba
 {
-	class GameboyAdvance
+	class GameBoyAdvance
 	{
 	public:
 		enum Mode
@@ -85,9 +85,9 @@ namespace dot::gba
 			std::shared_ptr<CARTS> cartS{};
 		};
 
-		GameboyAdvance();
-		GameboyAdvance(const GameboyAdvance&) = delete;
-		virtual ~GameboyAdvance() = default;
+		GameBoyAdvance();
+		GameBoyAdvance(const GameBoyAdvance&) = delete;
+		virtual ~GameBoyAdvance() = default;
 
 		virtual void on();
 		virtual void off();
@@ -96,7 +96,7 @@ namespace dot::gba
 		virtual void slot(const Cartridge& cartridge);
 		virtual void unslot();
 
-		GameboyAdvance& operator=(const GameboyAdvance&) = delete;
+		GameBoyAdvance& operator=(const GameBoyAdvance&) = delete;
 
     //protected:
 		virtual void boot();

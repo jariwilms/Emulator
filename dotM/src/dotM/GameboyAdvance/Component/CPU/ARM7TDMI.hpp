@@ -2,12 +2,12 @@
 
 #include <stdafx.hpp>
 
-#include "dotM/Architecture/EXCEPT/VECTOR.hpp"
-#include "dotM/Architecture/LUT/ARM.hpp"
-#include "dotM/Architecture/LUT/THUMB.hpp"
-#include "dotM/Architecture/MEMORY/MAP.hpp"
-#include "dotM/GameboyAdvance/Component/BUS/BUS.hpp"
-#include "dotM/GameboyAdvance/Component/BUS/IConnectable.hpp"
+#include "dotM/GameBoyAdvance/Architecture/EXCEPT/VECTOR.hpp"
+#include "dotM/GameBoyAdvance/Architecture/LUT/ARM.hpp"
+#include "dotM/GameBoyAdvance/Architecture/LUT/THUMB.hpp"
+#include "dotM/GameBoyAdvance/Architecture/MEMORY/MAP.hpp"
+#include "dotM/GameBoyAdvance/Component/BUS/BUS.hpp"
+#include "dotM/GameBoyAdvance/Component/BUS/IConnectable.hpp"
 #include "dotM/Model/Component/CPU/CPU.hpp"
 
 namespace dot::gba
@@ -210,7 +210,7 @@ namespace dot::gba
 		State state();
 
     //protected:
-        enum class OperationARM
+        enum class InstructionSetARM
         {
             DataProcessing = 0,
             Multiply,
@@ -228,7 +228,7 @@ namespace dot::gba
             CoprocessorRegisterTransfer,
             SoftwareInterrupt,
         };
-        enum class OperationTHUMB
+        enum class InstructionSetTHUMB
         {
             MoveShiftedRegister = 0,
             AddSubtract,
@@ -305,8 +305,8 @@ namespace dot::gba
         Pipeline<ins32_t, dword, 2> m_pipeline{};
         
         Registers m_registers{};
-        OperationARM m_operationARM{};                                         
-        OperationTHUMB m_operationTHUMB{};
+        InstructionSetARM   m_instructionARM{};                                         
+        InstructionSetTHUMB m_instructionTHUMB{};
 
         unsigned int m_waitCycles{};
 		bool m_irqRequest{};

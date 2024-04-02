@@ -96,7 +96,7 @@ namespace dot::gba
 
 				if (match)
 				{
-					m_operationTHUMB = static_cast<OperationTHUMB>(i);
+					m_instructionTHUMB = static_cast<InstructionSetTHUMB>(i);
 
 					return;
 				}
@@ -113,7 +113,7 @@ namespace dot::gba
 
 				if (match)
 				{
-					m_operationARM = static_cast<OperationARM>(i);
+					m_instructionARM = static_cast<InstructionSetARM>(i);
 
 					return;
 				}
@@ -134,61 +134,61 @@ namespace dot::gba
         if (tFlag)
 		{
 #if _DEBUG
-			const std::unordered_map<OperationTHUMB, const char*> operationToInstructionName
+			const std::unordered_map<InstructionSetTHUMB, const char*> operationToInstructionName
 			{
-			    { OperationTHUMB::MoveShiftedRegister,                "MoveShiftedRegister", },
-                { OperationTHUMB::AddSubtract,                        "AddSubtract", },
-                { OperationTHUMB::MoveCompareAddSubtractImmediate,    "MoveCompareAddSubtractImmediate", },
-                { OperationTHUMB::ALUOperations,                      "ALUOperations,"  },
-                { OperationTHUMB::HiRegisterOperationsBranchExchange, "HiRegisterOperationsBranchExchange,"  },
-                { OperationTHUMB::LoadPCRelative,                     "LoadPCRelative", },
-                { OperationTHUMB::LoadStoreRegisterOffset,            "LoadStoreRegisterOffset,"  },
-                { OperationTHUMB::LoadStoreSignExtended,              "LoadStoreSignExtended,"  },
-                { OperationTHUMB::LoadStoreImmediateOffset,           "LoadStoreImmediateOffset", },
-                { OperationTHUMB::LoadStoreHalfword,                  "LoadStoreHalfword", },
-                { OperationTHUMB::LoadStoreSPRelative,                "LoadStoreSPRelative", },
-                { OperationTHUMB::LoadAddress,                        "LoadAddress,"  },
-                { OperationTHUMB::AddOffsetToStackPointer,            "AddOffsetToStackPointer", },
-                { OperationTHUMB::PushPopRegisters,                   "PushPopRegisters", },
-                { OperationTHUMB::MultipleLoadStore,                  "MultipleLoadStore", },
-                { OperationTHUMB::ConditionalBranch,                  "ConditionalBranch", },
-                { OperationTHUMB::SoftwareInterrupt,                  "SoftwareInterrupt", },
-                { OperationTHUMB::UnconditionalBranch,                "UnconditionalBranch", },
-                { OperationTHUMB::LongBranchWithLink,                 "LongBranchWithLink", },
+			    { InstructionSetTHUMB::MoveShiftedRegister,                "MoveShiftedRegister", },
+                { InstructionSetTHUMB::AddSubtract,                        "AddSubtract", },
+                { InstructionSetTHUMB::MoveCompareAddSubtractImmediate,    "MoveCompareAddSubtractImmediate", },
+                { InstructionSetTHUMB::ALUOperations,                      "ALUOperations,"  },
+                { InstructionSetTHUMB::HiRegisterOperationsBranchExchange, "HiRegisterOperationsBranchExchange,"  },
+                { InstructionSetTHUMB::LoadPCRelative,                     "LoadPCRelative", },
+                { InstructionSetTHUMB::LoadStoreRegisterOffset,            "LoadStoreRegisterOffset,"  },
+                { InstructionSetTHUMB::LoadStoreSignExtended,              "LoadStoreSignExtended,"  },
+                { InstructionSetTHUMB::LoadStoreImmediateOffset,           "LoadStoreImmediateOffset", },
+                { InstructionSetTHUMB::LoadStoreHalfword,                  "LoadStoreHalfword", },
+                { InstructionSetTHUMB::LoadStoreSPRelative,                "LoadStoreSPRelative", },
+                { InstructionSetTHUMB::LoadAddress,                        "LoadAddress,"  },
+                { InstructionSetTHUMB::AddOffsetToStackPointer,            "AddOffsetToStackPointer", },
+                { InstructionSetTHUMB::PushPopRegisters,                   "PushPopRegisters", },
+                { InstructionSetTHUMB::MultipleLoadStore,                  "MultipleLoadStore", },
+                { InstructionSetTHUMB::ConditionalBranch,                  "ConditionalBranch", },
+                { InstructionSetTHUMB::SoftwareInterrupt,                  "SoftwareInterrupt", },
+                { InstructionSetTHUMB::UnconditionalBranch,                "UnconditionalBranch", },
+                { InstructionSetTHUMB::LongBranchWithLink,                 "LongBranchWithLink", },
 			};
 
 
 
-			std::cout << std::format("[{:#010x}] ", address) << std::format("{0}\n", operationToInstructionName.at(m_operationTHUMB));
+			std::cout << std::format("[{:#010x}] ", address) << std::format("{0}\n", operationToInstructionName.at(m_instructionTHUMB));
 #endif
 
 
 
 			using InstructionFunc = void (ARM7TDMI::*)(ins16_t);
-			const std::unordered_map<OperationTHUMB, InstructionFunc> operationToInstruction
+			const std::unordered_map<InstructionSetTHUMB, InstructionFunc> operationToInstruction
 			{
-                { OperationTHUMB::MoveShiftedRegister,                &ARM7TDMI::move_shifted_register }, 
-				{ OperationTHUMB::AddSubtract,                        &ARM7TDMI::add_subtract }, 
-				{ OperationTHUMB::MoveCompareAddSubtractImmediate,    &ARM7TDMI::move_compare_add_subtract_immediate }, 
-				{ OperationTHUMB::ALUOperations,                      &ARM7TDMI::alu_operations }, 
-				{ OperationTHUMB::HiRegisterOperationsBranchExchange, &ARM7TDMI::hi_register_operations__branch_exchange }, 
-				{ OperationTHUMB::LoadPCRelative,                     &ARM7TDMI::pc_relative_load }, 
-				{ OperationTHUMB::LoadStoreRegisterOffset,            &ARM7TDMI::load_store_register_offset }, 
-				{ OperationTHUMB::LoadStoreSignExtended,              &ARM7TDMI::load_store_sign_extended }, 
-				{ OperationTHUMB::LoadStoreImmediateOffset,           &ARM7TDMI::load_store_immediate_offet }, 
-				{ OperationTHUMB::LoadStoreHalfword,                  &ARM7TDMI::load_store_halfword }, 
-				{ OperationTHUMB::LoadStoreSPRelative,                &ARM7TDMI::sp_relative_load_store }, 
-				{ OperationTHUMB::LoadAddress,                        &ARM7TDMI::load_address }, 
-				{ OperationTHUMB::AddOffsetToStackPointer,            &ARM7TDMI::add_offset_stack_pointer }, 
-				{ OperationTHUMB::PushPopRegisters,                   &ARM7TDMI::push_pop_registers },
-				{ OperationTHUMB::MultipleLoadStore,                  &ARM7TDMI::multiple_load_store }, 
-				{ OperationTHUMB::ConditionalBranch,                  &ARM7TDMI::conditional_branch }, 
-				{ OperationTHUMB::SoftwareInterrupt,                  &ARM7TDMI::software_interrupt }, 
-				{ OperationTHUMB::UnconditionalBranch,                &ARM7TDMI::unconditional_branch }, 
-				{ OperationTHUMB::LongBranchWithLink,                 &ARM7TDMI::long_branch_link }, 
+                { InstructionSetTHUMB::MoveShiftedRegister,                &ARM7TDMI::move_shifted_register }, 
+				{ InstructionSetTHUMB::AddSubtract,                        &ARM7TDMI::add_subtract }, 
+				{ InstructionSetTHUMB::MoveCompareAddSubtractImmediate,    &ARM7TDMI::move_compare_add_subtract_immediate }, 
+				{ InstructionSetTHUMB::ALUOperations,                      &ARM7TDMI::alu_operations }, 
+				{ InstructionSetTHUMB::HiRegisterOperationsBranchExchange, &ARM7TDMI::hi_register_operations__branch_exchange }, 
+				{ InstructionSetTHUMB::LoadPCRelative,                     &ARM7TDMI::pc_relative_load }, 
+				{ InstructionSetTHUMB::LoadStoreRegisterOffset,            &ARM7TDMI::load_store_register_offset }, 
+				{ InstructionSetTHUMB::LoadStoreSignExtended,              &ARM7TDMI::load_store_sign_extended }, 
+				{ InstructionSetTHUMB::LoadStoreImmediateOffset,           &ARM7TDMI::load_store_immediate_offet }, 
+				{ InstructionSetTHUMB::LoadStoreHalfword,                  &ARM7TDMI::load_store_halfword }, 
+				{ InstructionSetTHUMB::LoadStoreSPRelative,                &ARM7TDMI::sp_relative_load_store }, 
+				{ InstructionSetTHUMB::LoadAddress,                        &ARM7TDMI::load_address }, 
+				{ InstructionSetTHUMB::AddOffsetToStackPointer,            &ARM7TDMI::add_offset_stack_pointer }, 
+				{ InstructionSetTHUMB::PushPopRegisters,                   &ARM7TDMI::push_pop_registers },
+				{ InstructionSetTHUMB::MultipleLoadStore,                  &ARM7TDMI::multiple_load_store }, 
+				{ InstructionSetTHUMB::ConditionalBranch,                  &ARM7TDMI::conditional_branch }, 
+				{ InstructionSetTHUMB::SoftwareInterrupt,                  &ARM7TDMI::software_interrupt }, 
+				{ InstructionSetTHUMB::UnconditionalBranch,                &ARM7TDMI::unconditional_branch }, 
+				{ InstructionSetTHUMB::LongBranchWithLink,                 &ARM7TDMI::long_branch_link }, 
 			};
 
-			std::invoke(operationToInstruction.at(m_operationTHUMB), this, static_cast<ins16_t>(instruction));
+			std::invoke(operationToInstruction.at(m_instructionTHUMB), this, static_cast<ins16_t>(instruction));
         }
         else
         {
@@ -202,53 +202,53 @@ namespace dot::gba
 
 
 #if _DEBUG
-            const std::unordered_map<OperationARM, const char*> operationToInstructionName
+            const std::unordered_map<InstructionSetARM, const char*> operationToInstructionName
             {
-                { OperationARM::DataProcessing,                      "DataProcessing" },
-                { OperationARM::Multiply,                            "Multiply" },
-                { OperationARM::MultiplyLong,                        "MultiplyLong" },
-                { OperationARM::SingleDataSwap,                      "SingleDataSwap" },
-                { OperationARM::BranchExchange,                      "BranchExchange" },
-                { OperationARM::HalfwordDataTransferRegisterOffset,  "HalfwordDataTransferRegisterOffset" },
-                { OperationARM::HalfwordDataTransferImmediateOffset, "HalfwordDataTransferImmediateOffset" },
-                { OperationARM::SingleDataTransfer,                  "SingleDataTransfer" },
-                { OperationARM::Undefined,                           "Undefined" },
-                { OperationARM::BlockDataTransfer,                   "BlockDataTransfer" },
-                { OperationARM::Branch,                              "Branch" },
-                { OperationARM::CoprocessorDataTransfer,             "CoprocessorDataTransfer" },
-                { OperationARM::CoprocessorDataOperation,            "CoprocessorDataOperation" },
-                { OperationARM::CoprocessorRegisterTransfer,         "CoprocessorRegisterTransfer" },
-                { OperationARM::SoftwareInterrupt,                   "SoftwareInterrupt" }
+                { InstructionSetARM::DataProcessing,                      "DataProcessing" },
+                { InstructionSetARM::Multiply,                            "Multiply" },
+                { InstructionSetARM::MultiplyLong,                        "MultiplyLong" },
+                { InstructionSetARM::SingleDataSwap,                      "SingleDataSwap" },
+                { InstructionSetARM::BranchExchange,                      "BranchExchange" },
+                { InstructionSetARM::HalfwordDataTransferRegisterOffset,  "HalfwordDataTransferRegisterOffset" },
+                { InstructionSetARM::HalfwordDataTransferImmediateOffset, "HalfwordDataTransferImmediateOffset" },
+                { InstructionSetARM::SingleDataTransfer,                  "SingleDataTransfer" },
+                { InstructionSetARM::Undefined,                           "Undefined" },
+                { InstructionSetARM::BlockDataTransfer,                   "BlockDataTransfer" },
+                { InstructionSetARM::Branch,                              "Branch" },
+                { InstructionSetARM::CoprocessorDataTransfer,             "CoprocessorDataTransfer" },
+                { InstructionSetARM::CoprocessorDataOperation,            "CoprocessorDataOperation" },
+                { InstructionSetARM::CoprocessorRegisterTransfer,         "CoprocessorRegisterTransfer" },
+                { InstructionSetARM::SoftwareInterrupt,                   "SoftwareInterrupt" }
             };
 
 
 
-            std::cout << std::format("[{:#010x}] ", address) << std::format("{0}\n", operationToInstructionName.at(m_operationARM));
+            std::cout << std::format("[{:#010x}] ", address) << std::format("{0}\n", operationToInstructionName.at(m_instructionARM));
 #endif
 
 
 
             using InstructionFunc = void (ARM7TDMI::*)(ins32_t);
-            const std::unordered_map<OperationARM, InstructionFunc> operationToInstruction
+            const std::unordered_map<InstructionSetARM, InstructionFunc> operationToInstruction
             {
-                { OperationARM::DataProcessing,                      &ARM7TDMI::data_processing               },
-                { OperationARM::Multiply,                            &ARM7TDMI::multiply                      },
-                { OperationARM::MultiplyLong,                        &ARM7TDMI::multiply_long                 },
-                { OperationARM::SingleDataSwap,                      &ARM7TDMI::single_data_swap              },
-                { OperationARM::BranchExchange,                      &ARM7TDMI::branch_exchange               },
-                { OperationARM::HalfwordDataTransferRegisterOffset,  &ARM7TDMI::halfword_data_transfer        },
-                { OperationARM::HalfwordDataTransferImmediateOffset, &ARM7TDMI::halfword_data_transfer        },
-                { OperationARM::SingleDataTransfer,                  &ARM7TDMI::single_data_transfer          },
-                { OperationARM::Undefined,                           &ARM7TDMI::undefined                     },
-                { OperationARM::BlockDataTransfer,                   &ARM7TDMI::block_data_transfer           },
-                { OperationARM::Branch,                              &ARM7TDMI::branch                        },
-                { OperationARM::CoprocessorDataTransfer,             &ARM7TDMI::coprocessor_data_transfer     },
-                { OperationARM::CoprocessorDataOperation,            &ARM7TDMI::coprocessor_data_operation    },
-                { OperationARM::CoprocessorRegisterTransfer,         &ARM7TDMI::coprocessor_register_transfer },
-                { OperationARM::SoftwareInterrupt,                   &ARM7TDMI::software_interrupt            },
+                { InstructionSetARM::DataProcessing,                      &ARM7TDMI::data_processing               },
+                { InstructionSetARM::Multiply,                            &ARM7TDMI::multiply                      },
+                { InstructionSetARM::MultiplyLong,                        &ARM7TDMI::multiply_long                 },
+                { InstructionSetARM::SingleDataSwap,                      &ARM7TDMI::single_data_swap              },
+                { InstructionSetARM::BranchExchange,                      &ARM7TDMI::branch_exchange               },
+                { InstructionSetARM::HalfwordDataTransferRegisterOffset,  &ARM7TDMI::halfword_data_transfer        },
+                { InstructionSetARM::HalfwordDataTransferImmediateOffset, &ARM7TDMI::halfword_data_transfer        },
+                { InstructionSetARM::SingleDataTransfer,                  &ARM7TDMI::single_data_transfer          },
+                { InstructionSetARM::Undefined,                           &ARM7TDMI::undefined                     },
+                { InstructionSetARM::BlockDataTransfer,                   &ARM7TDMI::block_data_transfer           },
+                { InstructionSetARM::Branch,                              &ARM7TDMI::branch                        },
+                { InstructionSetARM::CoprocessorDataTransfer,             &ARM7TDMI::coprocessor_data_transfer     },
+                { InstructionSetARM::CoprocessorDataOperation,            &ARM7TDMI::coprocessor_data_operation    },
+                { InstructionSetARM::CoprocessorRegisterTransfer,         &ARM7TDMI::coprocessor_register_transfer },
+                { InstructionSetARM::SoftwareInterrupt,                   &ARM7TDMI::software_interrupt            },
             };
 
-            std::invoke(operationToInstruction.at(m_operationARM), this, instruction);
+            std::invoke(operationToInstruction.at(m_instructionARM), this, instruction);
         }
     }
 

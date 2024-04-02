@@ -2,11 +2,11 @@
 
 #include <stdafx.hpp>
 
-#include "dotM/GameboyAdvance/Specification/GBA.hpp"
-#include "dotM/GameboyAdvance/Component/BUS/BUS.hpp"
-#include "dotM/GameboyAdvance/Component/DISPLAY/DISPLAY.hpp"
-#include "dotM/Architecture/MEMORY/MAP.hpp"
-#include "dotM/GameboyAdvance/Component/INTERRUPT/IPeripheral.hpp"
+#include "dotM/GameBoyAdvance/Specification/GBA.hpp"
+#include "dotM/GameBoyAdvance/Component/BUS/BUS.hpp"
+#include "dotM/GameBoyAdvance/Component/DISPLAY/DISPLAY.hpp"
+#include "dotM/GameBoyAdvance/Architecture/MEMORY/MAP.hpp"
+#include "dotM/GameBoyAdvance/Component/INTERRUPT/IPeripheral.hpp"
 
 namespace dot::gba
 {
