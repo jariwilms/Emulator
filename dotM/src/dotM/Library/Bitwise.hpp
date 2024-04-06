@@ -99,3 +99,28 @@ static constexpr T shift(T value, ShiftType type, U bits)
         default:             throw std::runtime_error("Invalid ShiftType!");
     }
 }
+
+template<typename T, typename U>
+static constexpr T shifted_composite(const U& msb, const U& lsb)
+{
+    static_assert(sizeof(T) == 2 * sizeof(U),                     "Size of types does not match!");
+    static_assert(std::is_unsigned_v<T> && std::is_unsigned_v<U>, "Operands must be unsigned!");
+
+    return T{ static_cast<T>((msb << (8 * sizeof(U))) | lsb) }; //msb and lsb are promoted to at least an int
+}
+
+template<typename T>
+bool carry_occurred_add(const T& a, const T& b, std::uint32_t index) //Index = bit to which was carried
+{
+    const auto& lowerMask = ~(~0u << index);
+    const auto& upperMask = lowerMask + 1;
+
+    return ((a & lowerMask) + (b & lowerMask) & upperMask) == upperMask;
+}
+template<typename T>
+bool carry_occurred_sub(const T& a, const T& b, std::uint32_t index) //Index = bit to which was carried
+{
+    const auto& bitMask = ~(~0u << index);
+
+    return (a & bitMask) < (b & bitMask);
+}
