@@ -163,7 +163,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="src\dotM\Gameboy\Architecture\IOMap.hpp" />
+    <ClInclude Include="src\dotM\Gameboy\Component\DISPLAY\Display.hpp" />
+    <ClInclude Include="src\dotM\Gameboy\Architecture\IO.hpp" />
+    <ClInclude Include="src\dotM\Gameboy\Component\PPU\PPU.hpp" />
     <ClInclude Include="src\dotM\Gameboy\Architecture\MemoryMap.hpp" />
     <ClInclude Include="src\dotM\Gameboy\Component\CPU\SharpSM83.hpp" />
     <ClInclude Include="src\dotM\Gameboy\GameBoy.hpp" />
@@ -172,6 +174,7 @@
     <ClInclude Include="src\dotM\GameboyAdvance\Architecture\LUT\ARM.hpp" />
     <ClInclude Include="src\dotM\Architecture\LUT\LUT_THUMB.hpp" />
     <ClInclude Include="src\dotM\GameboyAdvance\Architecture\LUT\THUMB.hpp" />
+    <ClInclude Include="src\dotM\Gameboy\Specification\GB.hpp" />
     <ClInclude Include="src\dotM\Library\Type.hpp" />
     <ClInclude Include="src\dotM\GameboyAdvance\Component\DMA\DMAController.hpp" />
     <ClInclude Include="src\dotM\GameboyAdvance\Component\DMA\DMAChannel.hpp" />
@@ -197,6 +200,8 @@
     <ClInclude Include="src\stdafx.hpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\dotM\Gameboy\Component\DISPLAY\Display.cpp" />
+    <ClCompile Include="src\dotM\Gameboy\Component\PPU\PPU.cpp" />
     <ClCompile Include="src\dotM\Gameboy\Component\CPU\SharpSM83.cpp" />
     <ClCompile Include="src\dotM\Gameboy\GameBoy.cpp" />
     <ClCompile Include="src\dotM\GameboyAdvance\Component\CPU\ARM7TDMI.cpp" />
