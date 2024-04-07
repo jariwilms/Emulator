@@ -129,10 +129,17 @@ namespace dot::gb
         void ld_r16_d16(word& r16);
         void ld_r16_mem_a(word r16);
         void ld_a_r16_mem(word r16);
-        void ld_d16_sp();
+        void ld_imm16_mem_sp();
+        void ld_hli_mem_a();
+        void ld_hld_mem_a();
+        void ld_a_hli_mem();
+        void ld_a_hld_mem();
+        void ld_hl_mem_d8();
 
         void inc_r16(word& r16);
         void dec_r16(word& r16);
+        void inc_hl_mem();
+        void dec_hl_mem();
         void add_hl_r16(word r16);
 
         void inc_r8(byte& r8);
@@ -149,8 +156,8 @@ namespace dot::gb
         void scf();
         void ccf();
 
-        void jr_d8();
-        void jr_cond_d8(bool flag);
+        void jr_imm8();
+        void jr_cond_imm8(bool flag);
 
         void stop();
 
@@ -181,7 +188,7 @@ namespace dot::gb
         void reti();
         void jp_cond_imm16(bool flag);
         void jp_imm16();
-        void jp_hl();
+        void jp_hl_mem();
         void call_cond_imm16(bool flag);
         void call_imm16();
         void rst_tgt3(byte address);
@@ -233,7 +240,7 @@ namespace dot::gb
 
         bool m_ime{};
         bool m_imeNext{};
-
+        bool m_hardLocked{}; //For invalid instructions
         bool m_interruptSignaled{};
 
         std::array<byte, 0x10000>& m_memory;
